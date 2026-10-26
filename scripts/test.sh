@@ -11,7 +11,12 @@ cd "$ROOT" || exit 1
 
 PASS=0 FAIL=0 SKIP=0
 pass() { PASS=$((PASS + 1)); printf '  ok    %s\n' "$*"; }
-fail() { FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "$*"; }
+fail() {
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  %s\n' "$*"
+  # In GitHub Actions, also an annotation (visible without the job log).
+  [ -z "${GITHUB_ACTIONS:-}" ] || printf '::error title=test.sh::%s\n' "$(printf '%s' "$*" | head -c 400 | tr '\n' ' ')"
+}
 skip() { SKIP=$((SKIP + 1)); printf '  skip  %s\n' "$*"; }
 section() { printf '\n== %s\n' "$*"; }
 has() { command -v "$1" >/dev/null 2>&1; }
