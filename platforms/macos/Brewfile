@@ -1,0 +1,13 @@
+# Homebrew dependencies for macOS. Installed by scripts/bootstrap-macos.sh.
+# WezTerm is handled separately so an existing manual install is not disturbed.
+brew "starship"
+brew "zsh-autosuggestions"
+brew "zsh-syntax-highlighting"
+brew "zoxide"
+brew "fzf"
+brew "eza"
+brew "bat"
+brew "git-delta"
+brew "duf"
+brew "tmux"
+cask "font-caskaydia-mono-nerd-font"

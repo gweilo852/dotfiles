@@ -1,0 +1,8 @@
+.state/
+.backups/
+.local/
+*.local
+*.local.lua
+!*.example
+!*.example.lua
+.DS_Store

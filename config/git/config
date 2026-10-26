@@ -1,0 +1,30 @@
+# Git settings: managed by dotfiles (https://github.com/gweilo852/dotfiles).
+# install.sh adds this file to ~/.gitconfig with include.path. Your name,
+# email and other settings stay in ~/.gitconfig.
+
+[core]
+	# delta when it is installed, otherwise less.
+	pager = "if command -v delta >/dev/null 2>&1; then delta; else less -FRX; fi"
+
+[interactive]
+	diffFilter = "if command -v delta >/dev/null 2>&1; then delta --color-only; else cat; fi"
+
+[delta]
+	navigate = true
+	line-numbers = true
+	side-by-side = false
+	dark = true
+	# Muted Catppuccin Macchiato backgrounds for removed and added lines.
+	minus-style = syntax "#3e2c3a"
+	minus-emph-style = syntax "#5b3a4a"
+	plus-style = syntax "#2c3a36"
+	plus-emph-style = syntax "#3b5446"
+	line-numbers-minus-style = "#ed8796"
+	line-numbers-plus-style = "#a6da95"
+	line-numbers-zero-style = "#5b6078"
+
+[merge]
+	conflictStyle = zdiff3
+
+[diff]
+	colorMoved = default

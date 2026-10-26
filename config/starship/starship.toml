@@ -1,0 +1,209 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+
+# Two-line prompt in muted Catppuccin Macchiato colours.
+#
+#   ╭─  ~/src/dotfiles  main !1 ⎈ cloudtools-us-tst 󰔟 4s
+#   ╰─ ❯
+#
+# Icons need a Nerd Font (CaskaydiaMono Nerd Font Mono in WezTerm).
+# Kubernetes context rules: see docs/kubernetes-prompt.md.
+
+add_newline = true
+palette = "catppuccin_macchiato"
+
+format = """
+[╭─](overlay0) \
+$os\
+$directory\
+$git_branch\
+$git_status\
+$kubernetes\
+$cmd_duration\
+$line_break\
+[╰─](overlay0) $character"""
+
+[palettes.catppuccin_macchiato]
+rosewater = "#f4dbd6"
+flamingo = "#f0c6c6"
+pink = "#f5bde6"
+mauve = "#c6a0f6"
+red = "#ed8796"
+maroon = "#ee99a0"
+peach = "#f5a97f"
+yellow = "#eed49f"
+green = "#a6da95"
+teal = "#8bd5ca"
+sky = "#91d7e3"
+sapphire = "#7dc4e4"
+blue = "#8aadf4"
+lavender = "#b7bdf8"
+text = "#cad3f5"
+subtext1 = "#b8c0e0"
+subtext0 = "#a5adcb"
+overlay2 = "#939ab7"
+overlay1 = "#8087a2"
+overlay0 = "#6e738d"
+surface2 = "#5b6078"
+surface1 = "#494d64"
+surface0 = "#363a4f"
+base = "#24273a"
+mantle = "#1e2030"
+crust = "#181926"
+
+[os]
+disabled = false
+format = '[$symbol](bold mauve) '
+
+[os.symbols]
+Macos = ""
+Linux = "\U000f033d"
+Windows = "\U000f0372"
+Ubuntu = ""
+Debian = ""
+Fedora = ""
+Arch = ""
+Alpine = ""
+Unknown = ""
+
+[directory]
+style = "bold blue"
+format = '[$path]($style)[$read_only]($read_only_style) '
+truncation_length = 3
+truncate_to_repo = true
+read_only = " \U000f033e"
+
+[git_branch]
+symbol = " "
+style = "bold green"
+format = '[$symbol$branch]($style) '
+
+[git_status]
+style = "bold yellow"
+format = '([$all_status$ahead_behind]($style) )'
+
+[cmd_duration]
+# Shown only when the previous command ran for 3 seconds or more.
+min_time = 3000
+style = "bold teal"
+format = "[\U000f051f $duration]($style) "
+
+[character]
+success_symbol = '[❯](bold green)'
+error_symbol = '[❯](bold red)'
+
+# --------------------------------------------------------------------
+# Kubernetes
+# --------------------------------------------------------------------
+# The first matching rule wins, so specific rules come first.
+# Aliases change only the displayed name, never the real context.
+#
+#   Production  prd, prod     red
+#   Staging     stg, uat      yellow
+#   Testing     tst, test, dev blue
+#   Sandbox     sandbox, sbx  green
+#   Other                     mauve
+#
+# GKE contexts are gke_<project>_<location>_<cluster>. The rules show the
+# cluster name up to and including the environment token, so
+# gke_<project>_europe-west4_kafka-emea-tst-kafka shows kafka-emea-tst.
+# A numbered variant keeps its number: ...-deephaven-emea-prd-deephaven-prd2
+# shows deephaven-emea-prd2, which stays distinct from deephaven-emea-prd.
+#
+# Keymaster contexts are keymaster.<domain>-<name> and show km:<name>.
+
+[kubernetes]
+disabled = false
+symbol = "⎈ "
+style = "bold mauve"
+format = '[$symbol$context]($style) '
+
+# GKE: numbered variants of an environment (prd2, tst3, ...)
+[[kubernetes.contexts]]
+context_pattern = '^gke_[^_]+_[^_]+_((?:[a-z0-9]+-)*?)(?:prd|prod)-(?:[a-z0-9]+-)*((?:prd|prod)[0-9]+)$'
+context_alias = '$1$2'
+style = "bold red"
+
+[[kubernetes.contexts]]
+context_pattern = '^gke_[^_]+_[^_]+_((?:[a-z0-9]+-)*?)(?:stg|uat)-(?:[a-z0-9]+-)*((?:stg|uat)[0-9]+)$'
+context_alias = '$1$2'
+style = "bold yellow"
+
+[[kubernetes.contexts]]
+context_pattern = '^gke_[^_]+_[^_]+_((?:[a-z0-9]+-)*?)(?:tst|test|dev)-(?:[a-z0-9]+-)*((?:tst|test|dev)[0-9]+)$'
+context_alias = '$1$2'
+style = "bold blue"
+
+[[kubernetes.contexts]]
+context_pattern = '^gke_[^_]+_[^_]+_((?:[a-z0-9]+-)*?)(?:sandbox|sbx)-(?:[a-z0-9]+-)*((?:sandbox|sbx)[0-9]+)$'
+context_alias = '$1$2'
+style = "bold green"
+
+# GKE: cluster name up to the environment token
+[[kubernetes.contexts]]
+context_pattern = '^gke_[^_]+_[^_]+_((?:[a-z0-9]+-)*?(?:prd|prod)[0-9]*)(?:-.*)?$'
+context_alias = '$1'
+style = "bold red"
+
+[[kubernetes.contexts]]
+context_pattern = '^gke_[^_]+_[^_]+_((?:[a-z0-9]+-)*?(?:stg|uat)[0-9]*)(?:-.*)?$'
+context_alias = '$1'
+style = "bold yellow"
+
+[[kubernetes.contexts]]
+context_pattern = '^gke_[^_]+_[^_]+_((?:[a-z0-9]+-)*?(?:tst|test|dev)[0-9]*)(?:-.*)?$'
+context_alias = '$1'
+style = "bold blue"
+
+[[kubernetes.contexts]]
+context_pattern = '^gke_[^_]+_[^_]+_((?:[a-z0-9]+-)*?(?:sandbox|sbx)[0-9]*)(?:-.*)?$'
+context_alias = '$1'
+style = "bold green"
+
+# Keymaster
+[[kubernetes.contexts]]
+context_pattern = '^keymaster\.[a-z0-9.]+-((?:.*-)?(?:prd|prod)[0-9]*(?:-.*)?)$'
+context_alias = 'km:$1'
+style = "bold red"
+
+[[kubernetes.contexts]]
+context_pattern = '^keymaster\.[a-z0-9.]+-((?:.*-)?(?:stg|uat)[0-9]*(?:-.*)?)$'
+context_alias = 'km:$1'
+style = "bold yellow"
+
+[[kubernetes.contexts]]
+context_pattern = '^keymaster\.[a-z0-9.]+-((?:.*-)?(?:tst|test|dev)[0-9]*(?:-.*)?)$'
+context_alias = 'km:$1'
+style = "bold blue"
+
+[[kubernetes.contexts]]
+context_pattern = '^keymaster\.[a-z0-9.]+-((?:.*-)?(?:sandbox|sbx)[0-9]*(?:-.*)?)$'
+context_alias = 'km:$1'
+style = "bold green"
+
+# GKE and Keymaster without an environment token
+[[kubernetes.contexts]]
+context_pattern = '^gke_[^_]+_[^_]+_(.+)$'
+context_alias = '$1'
+style = "bold mauve"
+
+[[kubernetes.contexts]]
+context_pattern = '^keymaster\.[a-z0-9.]+-(.+)$'
+context_alias = 'km:$1'
+style = "bold mauve"
+
+# Any other context: full name, coloured by an environment token in it
+[[kubernetes.contexts]]
+context_pattern = '^(?:.*[^a-z0-9])?(?:prd|prod|production)[0-9]*(?:[^a-z0-9].*)?$'
+style = "bold red"
+
+[[kubernetes.contexts]]
+context_pattern = '^(?:.*[^a-z0-9])?(?:stg|uat|staging)[0-9]*(?:[^a-z0-9].*)?$'
+style = "bold yellow"
+
+[[kubernetes.contexts]]
+context_pattern = '^(?:.*[^a-z0-9])?(?:tst|test|dev)[0-9]*(?:[^a-z0-9].*)?$'
+style = "bold blue"
+
+[[kubernetes.contexts]]
+context_pattern = '^(?:.*[^a-z0-9])?(?:sandbox|sbx)[0-9]*(?:[^a-z0-9].*)?$'
+style = "bold green"

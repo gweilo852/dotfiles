@@ -1,0 +1,6 @@
+# Intentional patterns in this repository:
+# SC2015: `check && pass || fail` - pass and fail always succeed.
+# SC2088: "~/..." in messages is text for people, not a path.
+# SC2012: ls -l is used only to read a permission string.
+# SC2016: single quotes pass zsh code to `zsh -c` unexpanded.
+disable=SC2015,SC2088,SC2012,SC2016

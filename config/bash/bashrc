@@ -1,0 +1,70 @@
+# shellcheck shell=bash disable=SC1090
+# Managed bash configuration (https://github.com/gweilo852/dotfiles).
+# ~/.bashrc sources this file from a marked block, so the distribution's
+# own ~/.bashrc stays in place. Put local settings in ~/.bashrc itself,
+# after the block. Works with bash 3.2 (macOS) and later.
+
+case $- in *i*) ;; *) return ;; esac
+# Load once per shell. Use `reload` (exec bash) to start fresh.
+[ -n "${_DOTFILES_BASH_LOADED:-}" ] && return
+_DOTFILES_BASH_LOADED=1
+
+DOTFILES_DIR=$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+
+_dotfiles_path_prepend() {
+  [ -d "$1" ] || return 0
+  case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH" ;; esac
+}
+_dotfiles_path_prepend "$HOME/bin"
+_dotfiles_path_prepend "$HOME/.local/bin"
+_dotfiles_path_prepend "$DOTFILES_DIR/.local/bin" # Unraid release binaries
+export PATH
+unset -f _dotfiles_path_prepend
+
+. "$DOTFILES_DIR/config/shell/env.sh"
+
+# History
+HISTSIZE=50000
+HISTFILESIZE=100000
+HISTCONTROL=ignoreboth:erasedups
+HISTTIMEFORMAT='%F %T  '
+shopt -s histappend checkwinsize
+shopt -s globstar 2>/dev/null || true
+
+# Completion, if the distribution's ~/.bashrc did not already load it.
+if [ -z "${BASH_COMPLETION_VERSINFO:-}" ]; then
+  for _f in /usr/share/bash-completion/bash_completion /etc/bash_completion \
+    ${HOMEBREW_PREFIX:+"$HOMEBREW_PREFIX/etc/profile.d/bash_completion.sh"}; do
+    if [ -r "$_f" ]; then . "$_f"; break; fi
+  done
+  unset _f
+fi
+
+. "$DOTFILES_DIR/config/shell/aliases.sh"
+alias reload='exec bash'
+
+if command -v kubectl >/dev/null 2>&1 && [ "${BASH_VERSINFO[0]}" -ge 4 ]; then
+  . <(kubectl completion bash 2>/dev/null)
+  complete -o default -F __start_kubectl k ku 2>/dev/null
+fi
+
+# fzf: Ctrl+R history, Ctrl+T files, Alt+C directories.
+if command -v fzf >/dev/null 2>&1; then
+  if _init=$(fzf --bash 2>/dev/null); then
+    eval "$_init"
+  else
+    for _f in /usr/share/doc/fzf/examples/key-bindings.bash /usr/share/fzf/key-bindings.bash \
+      /usr/share/fzf/shell/key-bindings.bash; do
+      if [ -r "$_f" ]; then . "$_f"; break; fi
+    done
+  fi
+  unset _init _f
+fi
+
+command -v zoxide >/dev/null 2>&1 && eval "$(zoxide init bash)"
+
+if command -v starship >/dev/null 2>&1; then
+  eval "$(starship init bash)"
+else
+  PS1='\n\[\e[34m\]\w\[\e[0m\]\n\[\e[32m\]❯\[\e[0m\] '
+fi

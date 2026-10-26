@@ -1,0 +1,13 @@
+# Package names for each Linux package manager. "-" means not packaged.
+# command	apt-get	dnf	pacman	zypper	apk
+zsh	zsh	zsh	zsh	zsh	zsh
+tmux	tmux	tmux	tmux	tmux	tmux
+fzf	fzf	fzf	fzf	fzf	fzf
+zoxide	zoxide	zoxide	zoxide	zoxide	zoxide
+bat	bat	bat	bat	bat	bat
+eza	eza	eza	eza	eza	eza
+delta	git-delta	git-delta	git-delta	git-delta	delta
+duf	duf	duf	duf	duf	duf
+starship	starship	-	starship	starship	starship
+zsh-autosuggestions	zsh-autosuggestions	zsh-autosuggestions	zsh-autosuggestions	zsh-autosuggestions	zsh-autosuggestions
+zsh-syntax-highlighting	zsh-syntax-highlighting	zsh-syntax-highlighting	zsh-syntax-highlighting	zsh-syntax-highlighting	zsh-syntax-highlighting

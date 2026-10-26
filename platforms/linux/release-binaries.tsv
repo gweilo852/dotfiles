@@ -1,0 +1,18 @@
+# Pinned release archives for Linux. Used by scripts/install-release-binaries.sh.
+# Each archive is verified against the SHA-256 value before extraction.
+# Update: change version, url and sha256 together (see docs/tools.md).
+# tool	version	arch	sha256	url
+starship	1.27.0	x86_64	10c8eb4cb3b761d9bf59ea828444c2dab36c900b7d69a69e08814b286969df89	https://github.com/starship/starship/releases/download/v1.27.0/starship-x86_64-unknown-linux-musl.tar.gz
+starship	1.27.0	aarch64	341f5cbf24699fa0b27ec88965ad25f862ea09e15d35a543fd6ffdff1d2aa00d	https://github.com/starship/starship/releases/download/v1.27.0/starship-aarch64-unknown-linux-musl.tar.gz
+zoxide	0.10.0	x86_64	2d93385b99f3e82cf2701609a1bffcad863fbeb75aa3fe7eb6be4d29be68b1ae	https://github.com/ajeetdsouza/zoxide/releases/download/v0.10.0/zoxide-0.10.0-x86_64-unknown-linux-musl.tar.gz
+zoxide	0.10.0	aarch64	f1f16c5d6298d63dee467eedea1cdcd8490e43e493bea43acd416dc9033ef641	https://github.com/ajeetdsouza/zoxide/releases/download/v0.10.0/zoxide-0.10.0-aarch64-unknown-linux-musl.tar.gz
+fzf	0.74.5	x86_64	d47d7f882972c7d674dbbba998ffa4116e68379616ffac7695d0671e9a722c5f	https://github.com/junegunn/fzf/releases/download/v0.74.5/fzf-0.74.5-linux_amd64.tar.gz
+fzf	0.74.5	aarch64	cf058001da21724a469b714a29cf4aab9cbe860d218a0d6c1b5b661efad7784c	https://github.com/junegunn/fzf/releases/download/v0.74.5/fzf-0.74.5-linux_arm64.tar.gz
+eza	0.23.5	x86_64	e06eebab74b73d6b7d51a796a353824b001bea82df077706382e100815d28904	https://github.com/eza-community/eza/releases/download/v0.23.5/eza_x86_64-unknown-linux-musl.tar.gz
+eza	0.23.5	aarch64	40b87ae8628aa2ff0f0d2dc24ab52f689631366385c3da630bae745671fd71ec	https://github.com/eza-community/eza/releases/download/v0.23.5/eza_aarch64-unknown-linux-gnu.tar.gz
+bat	0.26.1	x86_64	0dcd8ac79732c0d5b136f11f4ee00e581440e16a44eab5b3105b611bbf2cf191	https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-x86_64-unknown-linux-musl.tar.gz
+bat	0.26.1	aarch64	6369242c584065f195fb20cb36fbd7cb63ae690605bbe89868a7596b596c2c23	https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-aarch64-unknown-linux-musl.tar.gz
+delta	0.20.1	x86_64	69dcb4043f55c29118f408c6efd30115e0a4e0a6709253343b8c8fa814ab4a31	https://github.com/dandavison/delta/releases/download/0.20.1/delta-0.20.1-x86_64-unknown-linux-musl.tar.gz
+delta	0.20.1	aarch64	da7f4338f593572ff426ae153e0870e2fdc72729416eff551b40cdeb67940db8	https://github.com/dandavison/delta/releases/download/0.20.1/delta-0.20.1-aarch64-unknown-linux-gnu.tar.gz
+duf	0.9.1	x86_64	5add851e7062c5e56939abb664705e4d14fa2d06289490aff31d51f153832de7	https://github.com/muesli/duf/releases/download/v0.9.1/duf_0.9.1_linux_x86_64.tar.gz
+duf	0.9.1	aarch64	22ea0ad29f6610bf443aa351e600de97e47a9b380ef58316606a84bb8f595216	https://github.com/muesli/duf/releases/download/v0.9.1/duf_0.9.1_linux_arm64.tar.gz

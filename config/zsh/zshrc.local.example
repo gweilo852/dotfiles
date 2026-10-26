@@ -1,0 +1,14 @@
+# ~/.zshrc.local: machine-specific settings. Not managed by dotfiles.
+# This file is sourced by ~/.zshrc after completion and aliases, and before
+# plugins and the prompt. Keep secrets here, never in the repository, and
+# keep the file private: chmod 600 ~/.zshrc.local
+
+# Label for the tmux status bar.
+# export TMUX_HOST_LABEL="MAC"
+
+# Extra PATH entries.
+# path=($HOME/tools/bin $path)
+
+# Work environment variables and aliases.
+# export EXAMPLE_API_URL="https://example.internal"
+# alias deploy='make deploy'

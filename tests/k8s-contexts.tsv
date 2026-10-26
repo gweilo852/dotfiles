@@ -1,0 +1,25 @@
+# Kubernetes context display cases for tests/test-k8s-prompt.sh.
+# Project IDs and domains are fictitious.
+# context	expected display	expected colour
+gke_acme-deephaven-emea-prd_europe-west4_deephaven-emea-prd-deephaven	deephaven-emea-prd	red
+gke_acme-deephaven-emea-prd_europe-west4_deephaven-emea-prd-deephaven-prd2	deephaven-emea-prd2	red
+gke_acme-deephaven-emea-all_europe-west4_deephaven-emea-stg-deephaven	deephaven-emea-stg	yellow
+gke_acme-deephaven-emea-tst_europe-west4_deephaven-emea-tst-deephaven	deephaven-emea-tst	blue
+gke_acme-cloudtools-global-prd_europe-west4_cloudtools-global-prd-cloudtools	cloudtools-global-prd	red
+gke_acme-cloudtools-us-tst_us-east4_cloudtools-us-tst-cloudtools	cloudtools-us-tst	blue
+gke_acme-cloudtools-us-prd_us-east4_cloudtools-us-prd-cloudtools	cloudtools-us-prd	red
+gke_acme-kafka-emea-tst_europe-west4_kafka-emea-tst-kafka	kafka-emea-tst	blue
+gke_acme-kafka-emea-prd_europe-west4_kafka-emea-prd-kafka	kafka-emea-prd	red
+gke_acme-kafka-global-tst_europe-west4_kafka-global-dev-kafka	kafka-global-dev	blue
+gke_acme-defi-global-prd_europe-west4_defi-global-prd-defi-workloads	defi-global-prd	red
+gke_acme-runners-global-sandbox_europe-west4_runners-global-sandbox-runners	runners-global-sandbox	green
+gke_acme-runners-global-all_europe-west4_runners-global-all-runners	runners-global-all-runners	mauve
+gke_acme-vector-v5-1_us-central1_vector-gke-primary	vector-gke-primary	mauve
+keymaster.example.net-apac-kafka-prod	km:apac-kafka-prod	red
+keymaster.example.net-apac-kafka-uat	km:apac-kafka-uat	yellow
+keymaster.example.net-emea-cloudtools-tst	km:emea-cloudtools-tst	blue
+keymaster.example.net-emea-tools	km:emea-tools	mauve
+kind-dev	kind-dev	blue
+docker-desktop	docker-desktop	mauve
+production-eu	production-eu	red
+keymaster.example.net-prod-core	km:prod-core	red
