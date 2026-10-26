@@ -1,0 +1,24 @@
+# ~/.tmux.conf.local: machine-specific tmux settings. Not managed.
+# Copy this file to ~/.tmux.conf.local and keep only what you need.
+# It is loaded last, so every setting here wins. Reload: prefix r.
+
+# Mouse off (select text with the terminal, as before this setup).
+# set -g mouse off
+
+# Host label in the status bar. Usually set in the shell instead:
+# export TMUX_HOST_LABEL="VDI" in ~/.zshrc.local or ~/.bashrc.
+# set-environment -g TMUX_HOST_LABEL "VDI"
+
+# Shorter scrollback on a small machine.
+# set -g history-limit 20000
+
+# Jump straight to the windows you keep in every session.
+# bind -n M-1 select-window -t :=claude
+# bind -n M-2 select-window -t :=codex
+
+# A key that creates the usual windows in the current session.
+# Window names are examples; use your own.
+# bind W run-shell 'for w in claude codex infra; do tmux list-windows -F "##{window_name}" | grep -qx "$w" || tmux new-window -d -n "$w" -c "#{pane_current_path}"; done'
+
+# Status bar without the date.
+# set -g status-right "#[fg=#6e738d]#H #[fg=#a5adcb]%H:%M "

@@ -124,13 +124,16 @@ duf /mnt/user      # one path (useful on Unraid)
 ## tmux
 
 ```sh
+tm ghost-tower            # attach to or create a session (helper)
 tmux new -s work          # new session named "work"
 tmux attach -t work       # attach to it
 tmux ls                   # list sessions
 ```
 
 Inside tmux: `Ctrl+B d` detaches, `Ctrl+B c` opens a window, `Ctrl+B ,`
-renames it, F9 goes to the last window, F10 to the next. Mouse support is off.
+renames it, F9 goes to the last window, F10 to the next. Mouse support is
+on. The full guide, with keys, clipboard and agent workflows, is
+[tmux.md](tmux.md).
 
 ## Kubernetes helpers
 

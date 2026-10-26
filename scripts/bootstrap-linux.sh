@@ -58,9 +58,20 @@ while IFS=$'\t' read -r -a row; do
 done <"$DOTFILES_DIR/platforms/linux/packages.tsv"
 [ ${#missing[@]} -eq 0 ] && exit 0
 
+# Without sudo rights (common on a managed VDI) skip packages cleanly.
+if [ "$DRY_RUN" != 1 ] && [ "$(id -u)" != 0 ] && ! sudo -n true 2>/dev/null; then
+  if [ -t 0 ] && sudo -v; then
+    :
+  else
+    for entry in "${missing[@]}"; do warn "${entry#*:} missing; no sudo rights to install it"; done
+    warn "use: ./install.sh --no-packages --release-binaries (no root needed)"
+    exit 0
+  fi
+fi
+
 # apt needs a fresh index before it can report candidates.
 if [ "$pm" = apt-get ]; then
-  run as_root apt-get update -qq
+  run as_root apt-get update -qq || { warn "apt-get update failed; packages skipped"; exit 0; }
 fi
 
 wanted=() unpackaged=()

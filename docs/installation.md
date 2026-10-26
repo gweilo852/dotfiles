@@ -58,6 +58,12 @@ installation.
 To make zsh the login shell: `chsh -s "$(command -v zsh)"`. If you stay
 with bash, the block in `~/.bashrc` gives you the same prompt and tools.
 
+## Linux VDI
+
+A managed, headless host reached over SSH, often without root. Follow
+[vdi.md](vdi.md): preflight checklist, install without root, validation and
+restore.
+
 ## WSL (the-beast)
 
 Inside WSL, follow the Linux steps and add `--windows-wezterm`:

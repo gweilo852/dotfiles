@@ -49,6 +49,7 @@ export DOTFILES_PLATFORM_DETECTED=$PLATFORM
 
 info "dotfiles: $DOTFILES_DIR"
 info "platform: $PLATFORM$([ "$DRY_RUN" = 1 ] && echo ' (dry run)')"
+info "system:   $(detect_distro)"
 
 # --------------------------------------------------------------------
 # Safety gates
@@ -99,8 +100,8 @@ if [ "$NO_PACKAGES" = 1 ]; then
 else
   info "packages"
   case "$PLATFORM" in
-    macos) "$DOTFILES_DIR/scripts/bootstrap-macos.sh" ;;
-    linux | wsl) "$DOTFILES_DIR/scripts/bootstrap-linux.sh" ;;
+    macos) "$DOTFILES_DIR/scripts/bootstrap-macos.sh" || warn "package installation incomplete; continuing" ;;
+    linux | wsl) "$DOTFILES_DIR/scripts/bootstrap-linux.sh" || warn "package installation incomplete; continuing" ;;
   esac
 fi
 
@@ -120,19 +121,22 @@ fi
 info "configuration"
 C="$DOTFILES_DIR/config"
 
-if [ "$PLATFORM" != unraid ] || has zsh; then
+# zsh configuration only where zsh exists; bash is configured everywhere.
+if has zsh; then
   link_file "$C/zsh/zshrc" "$HOME/.zshrc"
   migrate_zshrc "${LAST_BACKUP:-}"
+else
+  info "  zsh not installed: zsh configuration skipped (bash is configured)"
 fi
 
 link_file "$C/starship/starship.toml" "${XDG_CONFIG_HOME:-$HOME/.config}/starship.toml"
 link_file "$C/tmux/tmux.conf" "$HOME/.tmux.conf"
 
-case "$PLATFORM" in
-  macos | linux)
-    link_file "$C/wezterm/wezterm.lua" "${XDG_CONFIG_HOME:-$HOME/.config}/wezterm/wezterm.lua"
-    ;;
-esac
+# WezTerm runs on the machine you type on. A headless Linux host (a VDI
+# reached over SSH) does not need its config.
+if [ "$PLATFORM" = macos ] || { [ "$PLATFORM" = linux ] && has wezterm; }; then
+  link_file "$C/wezterm/wezterm.lua" "${XDG_CONFIG_HOME:-$HOME/.config}/wezterm/wezterm.lua"
+fi
 
 # Bash keeps the distribution's own ~/.bashrc and only adds a source line.
 ensure_block "$HOME/.bashrc" bash "[ -r \"$C/bash/bashrc\" ] && . \"$C/bash/bashrc\""

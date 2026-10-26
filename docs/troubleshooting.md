@@ -74,6 +74,11 @@ by design. If the left key still fails, check that
 The package installs `batcat`. The managed aliases map `bat` to it. In a
 script, call `batcat`.
 
+## tmux problems
+
+See [tmux.md](tmux.md#troubleshooting) for colours, clipboard, mouse
+selection and the status label.
+
 ## Colours look wrong inside tmux
 
 Check that the terminal supports true colour:
@@ -110,6 +115,13 @@ Preview first with `--dry-run`.
 You (or another tool) replaced a managed symlink with a file. The uninstaller
 leaves such files alone. To manage it again, run `./install.sh`; it backs up
 the file and relinks it.
+
+## Restoring the original configuration
+
+`./uninstall.sh` (preview with `--dry-run`) removes the managed links and
+blocks and restores the backups. If the shell is too broken to run it, start
+one without startup files (`bash --noprofile --norc` or `zsh -f`) and follow
+the manual steps in [vdi.md](vdi.md#restore-the-original-configuration).
 
 ## Restoring a single file from a backup
 

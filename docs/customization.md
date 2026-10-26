@@ -111,9 +111,11 @@ After a change: `reload` (which runs `exec zsh`).
 
 ## tmux
 
-The prefix is `Ctrl+B`. The status bar shows `TMUX_HOST_LABEL`, which
-defaults to the short host name in capitals. Set it per machine in
-`~/.zshrc.local`, for example `export TMUX_HOST_LABEL="MAC"`.
+See [tmux.md](tmux.md). Machine-specific settings go in
+`~/.tmux.conf.local` (template: `config/tmux/tmux.conf.local.example`). The
+status bar shows `TMUX_HOST_LABEL`, which defaults to the short host name in
+capitals; set it per machine in the local shell file, for example
+`export TMUX_HOST_LABEL="MAC"`.
 
 ## Git
 

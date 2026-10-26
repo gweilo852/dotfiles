@@ -23,7 +23,7 @@ WEZTERM=$(command -v wezterm 2>/dev/null || true)
 [ -z "$WEZTERM" ] && [ -x /Applications/WezTerm.app/Contents/MacOS/wezterm ] &&
   WEZTERM=/Applications/WezTerm.app/Contents/MacOS/wezterm
 
-info "platform: $PLATFORM ($DOTFILES_DIR)"
+info "platform: $PLATFORM, $(detect_distro) ($DOTFILES_DIR)"
 
 # --------------------------------------------------------------------
 info "tools"
@@ -60,15 +60,13 @@ check_link() { # source target
     warn "$2 missing (run install.sh)"
   fi
 }
-if [ "$PLATFORM" != unraid ] || has zsh; then check_link "$C/zsh/zshrc" "$HOME/.zshrc"; fi
+if has zsh; then check_link "$C/zsh/zshrc" "$HOME/.zshrc"; fi
 check_link "$C/starship/starship.toml" "$CFG/starship.toml"
 check_link "$C/tmux/tmux.conf" "$HOME/.tmux.conf"
-case "$PLATFORM" in
-  macos | linux)
-    check_link "$C/wezterm/wezterm.lua" "$CFG/wezterm/wezterm.lua"
-    [ -e "$HOME/.wezterm.lua" ] && warn "~/.wezterm.lua exists and overrides $CFG/wezterm/wezterm.lua"
-    ;;
-esac
+if [ "$PLATFORM" = macos ] || { [ "$PLATFORM" = linux ] && has wezterm; }; then
+  check_link "$C/wezterm/wezterm.lua" "$CFG/wezterm/wezterm.lua"
+  [ -e "$HOME/.wezterm.lua" ] && warn "~/.wezterm.lua exists and overrides $CFG/wezterm/wezterm.lua"
+fi
 if grep -qF "$(block_begin bash)" "$HOME/.bashrc" 2>/dev/null; then ok "~/.bashrc block"; else warn "~/.bashrc block missing"; fi
 if has git; then
   if git config --global --get-all include.path 2>/dev/null | grep -qxF "$C/git/config"; then
@@ -124,6 +122,24 @@ if has tmux; then
   if tmux -L "$sock" -f "$C/tmux/tmux.conf" new-session -d true 2>/dev/null; then ok "tmux.conf"; else bad "tmux.conf failed to load"; fi
   tmux -L "$sock" kill-server 2>/dev/null
 fi
+
+# --------------------------------------------------------------------
+info "tmux"
+if has tmux; then
+  v=$(tmux -V | sed 's/[^0-9.]*\([0-9][0-9.]*\).*/\1/')
+  case "$v" in
+    1.* | 2.[0-5] | 2.[0-5].*) bad "tmux $v is too old; 2.6 or later is needed" ;;
+    2.* | 3.[01] | 3.[01].*) warn "tmux $v works; 3.2 or later is recommended" ;;
+    *) ok "tmux $v" ;;
+  esac
+  infocmp tmux-256color >/dev/null 2>&1 && ok "tmux-256color terminfo" ||
+    ok "no tmux-256color terminfo; screen-256color is used instead"
+  [ -r "$HOME/.tmux.conf.local" ] && ok "~/.tmux.conf.local present (loaded last)"
+  [ -n "${TMUX:-}" ] && ok "inside tmux session '$(tmux display -p '#S' 2>/dev/null)'"
+else
+  warn "tmux not installed (optional)"
+fi
+ok "clipboard backend for tmux copy: $(sh "$C/tmux/clipboard.sh" --detect) (plus OSC 52 to the terminal)"
 
 # --------------------------------------------------------------------
 if has zsh && [ -L "$HOME/.zshrc" ]; then

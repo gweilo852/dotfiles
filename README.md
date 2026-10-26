@@ -27,6 +27,7 @@ when the last command failed.
 - [Manual installation](#manual-installation)
 - [Everyday use](#everyday-use)
 - [Keyboard shortcuts](#keyboard-shortcuts)
+- [tmux](#tmux)
 - [Low-glare colours and fonts](#low-glare-colours-and-fonts)
 - [Updating](#updating)
 - [Uninstallation](#uninstallation)
@@ -49,6 +50,8 @@ when the last command failed.
   completions are cached so a new shell starts quickly.
 - **bash** on Linux, WSL and Unraid gets the same prompt, aliases and tools,
   and the distribution's own `~/.bashrc` stays in place.
+- **tmux** without plugins: subdued status bar, mouse, vi copy mode, OSC 52
+  clipboard (works over SSH), and helpers for project and story sessions.
 - **Modern tools** with fallbacks: eza, bat, delta, duf, fzf, zoxide, tmux.
   Every alias falls back to the standard command when a tool is missing.
 - **Safe installer**: dry run, confirmation, timestamped backups, a manifest
@@ -63,6 +66,7 @@ when the last command failed.
 | macOS (primary) | zsh | Homebrew | Reference setup. WezTerm runs here. |
 | Windows 11 + WSL | zsh or bash in WSL | apt, dnf, pacman, zypper, apk | WezTerm runs on Windows; `--windows-wezterm` copies its config. |
 | Linux | zsh or bash | apt, dnf, pacman, zypper, apk | `--release-binaries` fills gaps in older distributions. |
+| Linux VDI (headless, over SSH) | zsh or bash | as Linux, or none without root | See [docs/vdi.md](docs/vdi.md). No WezTerm config. |
 | Unraid | bash | none | Explicit `--unraid` mode. Minimal, and no change to `/boot`. |
 
 ## Prerequisites
@@ -146,6 +150,21 @@ On Windows:
 
 `--windows-wezterm` copies the file because Windows cannot follow a WSL
 symlink. Run the same command again after you change `wezterm.lua`.
+
+### Linux VDI
+
+Follow the preflight checklist in [docs/vdi.md](docs/vdi.md). In short:
+
+```sh
+git clone https://github.com/gweilo852/dotfiles.git ~/dotfiles
+cd ~/dotfiles
+scripts/preflight.sh                                   # read-only report
+./install.sh --dry-run --no-packages --release-binaries
+./install.sh --no-packages --release-binaries          # no root needed
+scripts/doctor.sh
+```
+
+To undo: `./uninstall.sh`. The guide also covers a manual restore.
 
 ### Unraid (Tower)
 
@@ -244,8 +263,72 @@ real name. To add a pattern, see
 | Tab | Completion menu; arrow keys move through it. |
 | `**` then Tab | fzf completion, for example `vim **<Tab>` or `kill -9 **<Tab>`. |
 
-tmux keeps the `Ctrl+B` prefix. F9 goes to the last window and F10 to the
-next window.
+tmux keys are in the [tmux](#tmux) section.
+
+## tmux
+
+`~/.tmux.conf` links to `config/tmux/tmux.conf`. It needs no plugins and no
+plugin manager, and works with tmux 2.6 or later (3.2 or later recommended).
+The installer never starts or changes a running tmux session; press
+`prefix r` to load the configuration into one. Full guide:
+[docs/tmux.md](docs/tmux.md).
+
+**Installation.** Included in `./install.sh` (the tmux package comes from
+Homebrew or the Linux package manager). Machine-specific settings go in
+`~/.tmux.conf.local`; start from `config/tmux/tmux.conf.local.example`.
+
+**Keys** (prefix `Ctrl+B`):
+
+| Keys | Action |
+| --- | --- |
+| prefix `c` / `,` | new window (current directory) / rename window |
+| prefix `\|` / `-` | split side by side / top and bottom (current directory) |
+| prefix `h` `j` `k` `l` | move between panes; `H` `J` `K` `L` resize |
+| F9 / F10 | last window / next window |
+| prefix `s`, `(` `)`, `$` | choose, previous/next, rename session |
+| prefix `C` | create or switch to a named session |
+| prefix `d` | detach |
+| prefix `[` then `v`, `y` | copy mode (vi keys): select, copy |
+| prefix `]` | paste |
+| prefix `r` | reload the configuration |
+
+Mouse support is on. Hold Shift while you drag to select with WezTerm
+instead.
+
+**Sessions.**
+
+```sh
+tmux new-session -s ghost-tower
+tmux new-window -t ghost-tower -n infra
+tmux attach -t ghost-tower
+tmux list-sessions
+tmux list-windows -a
+tm CLOUD-1234                                   # attach or create (helper)
+tmux-workspace ghost-tower infra claude codex   # create missing windows (helper)
+```
+
+**Claude Code and Codex.** Run each agent in its own named window. Window
+names stay fixed, and a window turns red when its program rings the bell.
+To type into an agent window from another shell, use `tmux-send`, which
+checks that the session and window exist, shows what runs there, and asks
+before it sends:
+
+```sh
+tmux-send ghost-tower:claude "summarise the failing tests"
+```
+
+**Clipboard.** A copy goes to the tmux buffer, to the terminal with OSC 52
+(WezTerm puts it on the clipboard of the machine you type on, also over SSH),
+and to a local tool when one exists: `pbcopy` on macOS, `wl-copy` on
+Wayland, `xclip` or `xsel` on X11, `clip.exe` on WSL. Headless systems need
+nothing. Unraid uses a minimal profile with OSC 52 only.
+
+**Platform differences.** Same keys and colours everywhere. Only the
+clipboard path, the terminfo entry (`tmux-256color`, else `screen-256color`)
+and the Unraid profile differ.
+
+**Troubleshooting.** See [docs/tmux.md](docs/tmux.md#troubleshooting): wrong
+colours, copy over SSH, mouse selection, the status label.
 
 ## Low-glare colours and fonts
 
@@ -357,6 +440,7 @@ dotfiles/
 │   ├── bootstrap-macos.sh         Homebrew packages
 │   ├── bootstrap-linux.sh         apt, dnf, pacman, zypper, apk packages
 │   ├── bootstrap-unraid.sh        Unraid preflight, then install.sh --unraid
+│   ├── preflight.sh               read-only report before a first install (VDI)
 │   ├── install-release-binaries.sh  pinned, verified release archives
 │   ├── doctor.sh                  health check of an installed machine
 │   └── test.sh                    automated validation
@@ -365,15 +449,15 @@ dotfiles/
 │   ├── starship/starship.toml     prompt and Kubernetes rules
 │   ├── zsh/                       zshrc, completion.zsh, plugins.zsh, local example
 │   ├── bash/bashrc                bash for Linux, WSL and Unraid
-│   ├── shell/                     env.sh and aliases.sh, shared by zsh and bash
-│   ├── tmux/tmux.conf
+│   ├── shell/                     env.sh, aliases.sh and tmux.sh, shared by zsh and bash
+│   ├── tmux/                      tmux.conf, clipboard.sh, local example
 │   └── git/config                 delta and diff settings
 ├── platforms/
 │   ├── macos/Brewfile
 │   ├── linux/                     package names and release archive table
 │   └── unraid/user-script.sh      optional relink at boot
 ├── tests/                         Kubernetes prompt cases and test
-└── docs/                          installation, customization, tools, Kubernetes, troubleshooting
+└── docs/                          installation, VDI, tmux, customization, tools, Kubernetes, troubleshooting
 ```
 
 Maintainers and coding agents: read [AGENTS.md](AGENTS.md) first.

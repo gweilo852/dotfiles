@@ -41,6 +41,7 @@ if [ -z "${BASH_COMPLETION_VERSINFO:-}" ]; then
 fi
 
 . "$DOTFILES_DIR/config/shell/aliases.sh"
+. "$DOTFILES_DIR/config/shell/tmux.sh"
 alias reload='exec bash'
 
 if command -v kubectl >/dev/null 2>&1 && [ "${BASH_VERSINFO[0]}" -ge 4 ]; then

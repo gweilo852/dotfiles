@@ -88,6 +88,23 @@ detect_platform() {
   esac
 }
 
+# Prints the distribution, for example "Ubuntu 22.04.4 LTS (ubuntu 22.04)",
+# from /etc/os-release. Prints "unknown" when the file is missing.
+detect_distro() {
+  local f="$DOTFILES_SYSROOT/etc/os-release"
+  if [ "$DOTFILES_UNAME" = Darwin ] && [ -z "$DOTFILES_SYSROOT" ]; then
+    echo "macOS $(sw_vers -productVersion 2>/dev/null)"
+  elif [ -r "$f" ]; then
+    (
+      # shellcheck disable=SC1090
+      . "$f"
+      echo "${PRETTY_NAME:-${NAME:-Linux}} (${ID:-unknown} ${VERSION_ID:-})"
+    )
+  else
+    echo unknown
+  fi
+}
+
 detect_pkg_manager() {
   local pm
   for pm in brew apt-get dnf pacman zypper apk; do

@@ -34,6 +34,13 @@ machine. Machine-specific content does not belong here.
   Starship, syntax highlighting last).
 - `config/bash/bashrc` is sourced from a marked block in `~/.bashrc` and
   uses the same `env.sh` and `aliases.sh`.
+- `config/shell/tmux.sh` defines the tmux helpers (`tm`, `tmux-workspace`,
+  `tmux-send`) only when the name is free, so user definitions win.
+- `config/tmux/tmux.conf` is the single tmux config. It uses no plugins.
+  Version-sensitive settings must work on tmux 2.6. `clipboard.sh` picks
+  the local clipboard tool; OSC 52 (`set-clipboard on`) is the main path.
+  Unraid gets a minimal profile through an `if-shell` on
+  `/etc/unraid-version`.
 - `config/starship/starship.toml` holds the prompt and the ordered Kubernetes
   context rules. `tests/k8s-contexts.tsv` lists the expected display for each
   context pattern.
@@ -71,7 +78,12 @@ properties. `scripts/test.sh` checks most of them.
    install plugins. Persistence at boot is a documented manual step.
 10. Every optional tool can be missing. Shell files must start without
     errors when only `/usr/bin` and `/bin` are on PATH.
-11. Shell initialization runs once: one compinit, one Starship init, plugins
+11. The installer never starts, stops, or sends keys to tmux sessions, and
+    no shell startup file runs tmux. tmux tests use an isolated socket
+    (`tmux -L`) and a temporary `$HOME`.
+12. No clipboard tool, desktop or WezTerm may be required on a headless host
+    (VDI, Unraid).
+13. Shell initialization runs once: one compinit, one Starship init, plugins
     guarded against a second load.
 
 ## Testing expectations
@@ -89,6 +101,8 @@ startup with and without optional tools, uninstall and restore, Unraid
 refusals, and secret leakage. A check whose tool is missing is skipped.
 
 - Add a row to `tests/k8s-contexts.tsv` for every new Kubernetes rule.
+- Never hardcode project names, Jira keys, hosts or paths in shared files.
+  Machine workflows belong in `~/.zshrc.local` and `~/.tmux.conf.local`.
 - Add a test to `scripts/test.sh` for every new installer behaviour.
 - Installer tests must use the temporary `$HOME` in `scripts/test.sh`. Do
   not run `install.sh` against the real home directory during development
@@ -121,6 +135,10 @@ refusals, and secret leakage. A check whose tool is missing is skipped.
 - Debian and Ubuntu: `bat` is `batcat`, and old releases lack `eza`,
   `starship` or a recent `fzf`. The aliases and plugin loaders handle this;
   `--release-binaries` fills the gaps.
+- Linux VDI: often headless, without root, behind a proxy, reached over SSH.
+  The WezTerm config is linked on Linux only when `wezterm` exists, zsh is
+  configured only when zsh exists, and package installation stops cleanly
+  without sudo rights. `scripts/preflight.sh` is the read-only check.
 - Unraid: `/root` is in RAM and rebuilt at boot; `/boot` is FAT32 (no
   symlinks, no exec). There is no package manager and usually no zsh, so
   Unraid uses bash. State and backups live in `<repo>/.state` and
