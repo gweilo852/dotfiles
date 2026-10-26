@@ -69,3 +69,32 @@ if command -v starship >/dev/null 2>&1; then
 else
   PS1='\n\[\e[34m\]\w\[\e[0m\]\n\[\e[32m\]❯\[\e[0m\] '
 fi
+
+# Interactive zsh handoff (opt-in: DOTFILES_INTERACTIVE_ZSH=1 in
+# ~/.config/dotfiles/local.conf). For accounts whose login shell must stay
+# bash, such as Active Directory accounts. Only a shell that a person types
+# into qualifies: no `bash -c` or `bash -ic` command, a terminal on stdin
+# and stdout, not a dumb terminal, and no zsh started this way above it.
+# The exec waits for the first prompt, so every startup file (also the
+# rest of ~/.profile) runs first, and exported variables reach zsh.
+# This bash is fully configured, so it stays usable if zsh cannot start.
+# Escape: DOTFILES_NO_ZSH=1 bash -i. See docs/active-directory.md.
+. "$DOTFILES_DIR/config/shell/zsh-handoff.sh"
+if [ -z "${BASH_EXECUTION_STRING:-}" ] && [ -z "${DOTFILES_ZSH_HANDOFF:-}" ] &&
+  [ -t 0 ] && [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] &&
+  _dotfiles_zsh_handoff_target && "$_dotfiles_zsh" -f -c 'exit 0' 2>/dev/null; then
+  _dotfiles_handoff_zsh=$_dotfiles_zsh
+  _dotfiles_handoff() {
+    [ -n "${_dotfiles_handoff_zsh:-}" ] || return 0
+    local zsh=$_dotfiles_handoff_zsh
+    _dotfiles_handoff_zsh=
+    [ -z "${DOTFILES_NO_ZSH:-}" ] || return 0
+    # Marks the zsh and everything below it, so a bash started from that
+    # zsh stays bash.
+    export DOTFILES_ZSH_HANDOFF=1
+    if shopt -q login_shell; then exec "$zsh" -l; else exec "$zsh" -i; fi
+    unset DOTFILES_ZSH_HANDOFF
+    echo "dotfiles: cannot start $zsh; staying in bash" >&2
+  }
+  PROMPT_COMMAND="_dotfiles_handoff${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+fi

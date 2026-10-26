@@ -105,6 +105,22 @@ wezterm --config-file ~/.config/wezterm/wezterm.lua ls-fonts 2>&1 | grep -E 'ERR
 
 An error in `wezterm_local.lua` is logged, and the main config still loads.
 
+## An SSH login still starts bash
+
+With `--interactive-zsh`, run `scripts/doctor.sh`: the "interactive zsh
+handoff" line gives the reason. See
+[active-directory.md](active-directory.md#troubleshooting). Without the
+option, bash is expected: the account's login shell did not change.
+
+## `scripts/test.sh` stops with "Stopped" over SSH
+
+Fixed: interactive shells in the tests and in `doctor.sh` now run without
+the caller's terminal (`no_tty` in `scripts/lib.sh`). The cause was a
+`zsh -i -c` check that left the terminal's foreground process group on a
+finished process; the next `bash -i` (bash 5.1) then stopped the test
+script with SIGTTIN. Update the repository. To resume a stopped run, type
+`fg`.
+
 ## The installer stopped with "not interactive"
 
 Without a terminal (for example in a script), the installer needs `--yes`.

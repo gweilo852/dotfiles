@@ -31,6 +31,9 @@ for tool in zsh starship zoxide fzf eza bat delta duf tmux git; do
   path=$(command -v "$tool" 2>/dev/null || true)
   [ -z "$path" ] && [ "$tool" = bat ] && path=$(command -v batcat 2>/dev/null || true)
   [ -z "$path" ] && [ -x "$DOTFILES_DIR/.local/bin/$tool" ] && path="$DOTFILES_DIR/.local/bin/$tool"
+  # Release binaries: the managed bash and zsh configuration add
+  # ~/.local/bin to PATH, also when the shell that runs this check has not.
+  [ -z "$path" ] && [ -x "$HOME/.local/bin/$tool" ] && path="$HOME/.local/bin/$tool (on PATH in new shells)"
   if [ -n "$path" ]; then
     ok "$tool  ${_c_dim}$path${_c_off}"
   else
@@ -119,7 +122,7 @@ if [ -n "$WEZTERM" ]; then
 fi
 if has tmux; then
   sock="dotfiles-doctor-$$"
-  if tmux -L "$sock" -f "$C/tmux/tmux.conf" new-session -d true 2>/dev/null; then ok "tmux.conf"; else bad "tmux.conf failed to load"; fi
+  if DOTFILES_TMUX_DIR="$C/tmux" tmux -L "$sock" -f "$C/tmux/tmux.conf" new-session -d true 2>/dev/null; then ok "tmux.conf"; else bad "tmux.conf failed to load"; fi
   tmux -L "$sock" kill-server 2>/dev/null
 fi
 
@@ -142,11 +145,39 @@ fi
 ok "clipboard backend for tmux copy: $(sh "$C/tmux/clipboard.sh" --detect) (plus OSC 52 to the terminal)"
 
 # --------------------------------------------------------------------
+info "shell"
+# $SHELL is the account's login shell. It stays bash with the handoff on;
+# the parent process is the shell that started this check.
+login=$( (getent passwd "$(id -un)" 2>/dev/null ||
+  DF_USER=$(id -un) awk -F: '$1 == ENVIRON["DF_USER"]' /etc/passwd 2>/dev/null) | cut -d: -f7 | head -n 1)
+ok "login shell: ${login:-${SHELL:-unknown}}${login:+ (account)}, \$SHELL=${SHELL:-unset}"
+ok "running from: $(ps -o comm= -p "$PPID" 2>/dev/null | sed 's/^-//')"
+# shellcheck source=config/shell/zsh-handoff.sh
+. "$C/shell/zsh-handoff.sh"
+if _dotfiles_zsh_handoff_target; then
+  ok "interactive zsh handoff: on ($_dotfiles_zsh, from $LOCAL_CONF)"
+  "$_dotfiles_zsh" -f -c 'exit 0' 2>/dev/null || bad "$_dotfiles_zsh does not start; bash stays the shell"
+  lf=$(bash_login_file)
+  if [ -z "$lf" ]; then
+    warn "no ~/.bash_profile, ~/.bash_login or ~/.profile: an SSH login does not read ~/.bashrc (run install.sh --interactive-zsh)"
+  elif grep -q 'bashrc' "$lf"; then
+    ok "SSH login path: $lf loads ~/.bashrc"
+  else
+    warn "$lf does not load ~/.bashrc, so an SSH login does not hand off (run install.sh)"
+  fi
+  [ "$PLATFORM" = unraid ] || [ "$(sh "$C/tmux/shell.sh" --print)" = "$_dotfiles_zsh" ] ||
+    warn "tmux would not select $_dotfiles_zsh"
+else
+  ok "interactive zsh handoff: $_dotfiles_zsh_why"
+fi
+
+# --------------------------------------------------------------------
 if has zsh && [ -L "$HOME/.zshrc" ]; then
   info "interactive zsh"
-  err=$(zsh -i -c exit 2>&1 >/dev/null)
+  # no_tty: an interactive shell must not take over this terminal.
+  err=$(no_tty zsh -i -c exit 2>&1 >/dev/null)
   [ -z "$err" ] && ok "starts without errors" || bad "zsh startup output: $(printf '%s' "$err" | head -n 3)"
-  n=$(zsh -i -c 'print -l $precmd_functions' 2>/dev/null | grep -c 'starship_precmd$')
+  n=$(no_tty zsh -i -c 'print -l $precmd_functions' 2>/dev/null | grep -c 'starship_precmd$')
   case "$n" in
     1) ok "prompt initialized once" ;;
     0) has starship && bad "starship prompt not initialized" ;;
@@ -154,7 +185,7 @@ if has zsh && [ -L "$HOME/.zshrc" ]; then
   esac
   if [ "$QUICK" = 0 ]; then
     start=$(perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null || echo 0)
-    for _ in 1 2 3; do zsh -i -c exit >/dev/null 2>&1; done
+    for _ in 1 2 3; do no_tty zsh -i -c exit >/dev/null 2>&1; done
     end=$(perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null || echo 0)
     [ "$start" != 0 ] && ok "startup time about $(((end - start) / 3)) ms"
   fi

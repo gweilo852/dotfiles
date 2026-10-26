@@ -6,6 +6,8 @@
 set -uo pipefail
 ROOT=$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT" || exit 1
+# shellcheck source=scripts/lib.sh
+. "$ROOT/scripts/lib.sh" # for no_tty
 
 PASS=0 FAIL=0 SKIP=0
 pass() { PASS=$((PASS + 1)); printf '  ok    %s\n' "$*"; }
@@ -21,7 +23,7 @@ WEZTERM=$(command -v wezterm 2>/dev/null || true)
 TMP=$(mktemp -d)
 trap 'tkill 2>/dev/null; rm -rf "$TMP"' EXIT
 
-BASH_FILES="install.sh uninstall.sh scripts/*.sh platforms/unraid/user-script.sh config/bash/bashrc config/shell/env.sh config/shell/aliases.sh config/shell/tmux.sh config/tmux/clipboard.sh tests/*.sh"
+BASH_FILES="install.sh uninstall.sh scripts/*.sh platforms/unraid/user-script.sh config/bash/bashrc config/shell/env.sh config/shell/aliases.sh config/shell/tmux.sh config/shell/zsh-handoff.sh config/tmux/clipboard.sh config/tmux/shell.sh tests/*.sh"
 ZSH_FILES="config/zsh/zshrc config/zsh/completion.zsh config/zsh/plugins.zsh config/zsh/zshrc.local.example"
 
 # --------------------------------------------------------------------
@@ -35,6 +37,14 @@ if has zsh; then
   done
 else
   skip "zsh not installed"
+fi
+# POSIX files also run under sh (dash on Debian).
+for f in config/shell/zsh-handoff.sh config/tmux/shell.sh config/tmux/clipboard.sh; do
+  sh -n "$f" 2>"$TMP/err" && pass "sh -n $f" || fail "sh -n $f: $(cat "$TMP/err")"
+done
+if has python3; then
+  python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1]).read())' tests/pty-run.py 2>"$TMP/err" &&
+    pass "python syntax tests/pty-run.py" || fail "tests/pty-run.py: $(cat "$TMP/err")"
 fi
 if has shellcheck; then
   # shellcheck disable=SC2086
@@ -77,8 +87,9 @@ if has git; then
   git config -f config/git/config --list >/dev/null 2>&1 && pass "git config parses" || fail "git config syntax"
 fi
 
+# No regex intervals such as {64}: mawk 1.3.4 (Debian 11) does not have them.
 awk -F'\t' '!/^#/ && NF {
-  if (NF != 5 || $4 !~ /^[0-9a-f]{64}$/ || $5 !~ /^https:\/\// || $3 !~ /^(x86_64|aarch64)$/) { print "bad row: " $0; bad = 1 }
+  if (NF != 5 || length($4) != 64 || $4 !~ /^[0-9a-f]+$/ || $5 !~ /^https:\/\// || $3 !~ /^(x86_64|aarch64)$/) { print "bad row: " $0; bad = 1 }
 } END { exit bad }' platforms/linux/release-binaries.tsv && pass "release-binaries.tsv rows are well formed" ||
   fail "release-binaries.tsv"
 
@@ -147,6 +158,51 @@ if has tmux; then
   [ "$(topt unraid @dotfiles_profile)" = minimal ] && pass "Unraid selects the minimal tmux profile" || fail "Unraid tmux profile"
   tmux -L "dotfiles-test-$$-unraid" list-keys -T copy-mode-vi 2>/dev/null | grep -E ' y ' | grep -q copy-selection-and-cancel &&
     pass "Unraid copy uses OSC 52 only" || fail "Unraid copy binding"
+
+  # Shell for new windows. The reference is what tmux picks without this
+  # configuration (the account's login shell may already be zsh).
+  ZSH_BIN=$(command -v zsh 2>/dev/null || true)
+  env -i HOME="$TH" PATH="$PATH" TERM=xterm-256color tmux -L "dotfiles-test-$$-ref" -f /dev/null new-session -d 'sleep 60'
+  SOCKETS="$SOCKETS dotfiles-test-$$-ref"
+  ref=$(topt ref default-shell)
+  mkdir -p "$TH/.config/dotfiles"
+  tserver zoff >/dev/null
+  [ "$(topt zoff default-shell)" = "$ref" ] && pass "tmux keeps its default shell when the handoff is off ($ref)" ||
+    fail "tmux default-shell with handoff off: $(topt zoff default-shell), want $ref"
+  if [ -n "$ZSH_BIN" ]; then
+    printf 'DOTFILES_INTERACTIVE_ZSH=1\n' >"$TH/.config/dotfiles/local.conf"
+    tserver zon >/dev/null
+    [ "$(topt zon default-shell)" = "$ZSH_BIN" ] && pass "tmux uses zsh for new windows when the handoff is on" ||
+      fail "tmux default-shell with handoff on: $(topt zon default-shell)"
+    tz="tmux -L dotfiles-test-$$-zon"
+    $tz new-window -d -n shellcheck
+    sleep 0.5
+    cmd=$($tz display-message -p -t t:shellcheck '#{pane_current_command}')
+    [ "$cmd" = zsh ] && pass "a new tmux window runs zsh" || fail "new tmux window runs '$cmd'"
+    rm "$TH/.config/dotfiles/local.conf"
+    $tz source-file "$TH/.tmux.conf"
+    [ "$(topt zon default-shell)" = "$ref" ] && pass "tmux reload returns to the default shell after the handoff is off" ||
+      fail "tmux reload kept $(topt zon default-shell)"
+    printf 'DOTFILES_INTERACTIVE_ZSH=1\n' >"$TH/.config/dotfiles/local.conf"
+    $tz source-file "$TH/.tmux.conf"
+    [ "$(topt zon default-shell)" = "$ZSH_BIN" ] && pass "tmux reload selects zsh after the handoff is on" || fail "tmux reload did not select zsh"
+    tserver znozsh DOTFILES_NO_ZSH=1 >/dev/null
+    [ "$(topt znozsh default-shell)" = "$ref" ] && pass "DOTFILES_NO_ZSH keeps the tmux default shell" || fail "DOTFILES_NO_ZSH ignored by tmux"
+    tserver zunraid DOTFILES_SYSROOT="$TMP/sys-unraid-t" >/dev/null
+    [ "$(topt zunraid default-shell)" = "$ref" ] && pass "Unraid never gets zsh in tmux" || fail "Unraid tmux default-shell: $(topt zunraid default-shell)"
+    printf 'DOTFILES_INTERACTIVE_ZSH=1\nDOTFILES_ZSH=/nonexistent/zsh\n' >"$TH/.config/dotfiles/local.conf"
+    tserver zmissing >/dev/null
+    [ "$(topt zmissing default-shell)" = "$ref" ] && pass "a missing DOTFILES_ZSH keeps the tmux default shell" || fail "tmux took a missing zsh"
+    printf 'DOTFILES_INTERACTIVE_ZSH=1\n' >"$TH/.config/dotfiles/local.conf"
+    printf 'set -g default-shell /bin/sh\n' >"$TH/.tmux.conf.local"
+    tserver zlocal >/dev/null
+    [ "$(topt zlocal default-shell)" = /bin/sh ] && pass "~/.tmux.conf.local overrides the window shell" || fail "tmux local default-shell override"
+    rm -f "$TH/.tmux.conf.local" "$TH/.config/dotfiles/local.conf"
+  else
+    skip "zsh not installed: tmux zsh selection"
+  fi
+  out=$(env -i HOME="$TH" PATH="$PATH" sh "$ROOT/config/tmux/shell.sh" 2>&1; echo "rc=$?")
+  [ "$out" = "rc=0" ] && pass "shell.sh outside tmux does nothing (never the default server)" || fail "shell.sh outside tmux: $out"
   tkill
 else
   skip "tmux not installed: tmux checks"
@@ -161,7 +217,7 @@ for d in all xsel none; do
 done
 for t in pbcopy wl-copy xclip xsel clip.exe; do printf '#!/bin/sh\ncat >/dev/null\n' >"$CB/all/$t"; done
 printf '#!/bin/sh\ncat >/dev/null\n' >"$CB/xsel/xsel"
-chmod +x "$CB"/*/*
+for f in "$CB"/*/*; do [ -L "$f" ] || chmod +x "$f"; done
 cbcase() { # want, dir, env...
   local want=$1 dir=$2 got
   shift 2
@@ -223,12 +279,70 @@ check_detect unraid DOTFILES_UNAME=Linux DOTFILES_SYSROOT="$TMP/sys-unraid" WSL_
 check_detect unraid DOTFILES_UNAME=Linux DOTFILES_SYSROOT="$TMP/sys-unraid" DOTFILES_PLATFORM=linux
 
 # --------------------------------------------------------------------
+section "interactive zsh handoff settings"
+# The decision in config/shell/zsh-handoff.sh, under sh (dash on Debian)
+# and bash, with a stub zsh and a temporary HOME.
+HZ="$TMP/hz"
+mkdir -p "$HZ/bin" "$HZ/.config/dotfiles" "$HZ/xdg/dotfiles" "$HZ/nozsh"
+printf '#!/bin/sh\nexit 0\n' >"$HZ/bin/zsh"
+chmod +x "$HZ/bin/zsh"
+hz() { # shell, expected pattern, local.conf content, env...
+  local sh_ want=$2 conf=$3 got
+  sh_=$(command -v "$1")
+  shift 3
+  printf '%b' "$conf" >"$HZ/.config/dotfiles/local.conf"
+  got=$(env -i HOME="$HZ" PATH="$HZ/bin:/usr/bin:/bin" "$@" "$sh_" -c \
+    '. "$1"; if _dotfiles_zsh_handoff_target; then echo "on $_dotfiles_zsh"; else echo "no $_dotfiles_zsh_why"; fi' \
+    sh "$ROOT/config/shell/zsh-handoff.sh" 2>&1)
+  # shellcheck disable=SC2254
+  case "$got" in $want) pass "${sh_##*/}: ${conf:-(no setting)} $* -> ${got%% (*}" ;; *) fail "${sh_##*/}: '$conf' $*: want $want, got $got" ;; esac
+}
+for s_ in sh bash; do
+  hz $s_ "no off*" ''
+  hz $s_ "on $HZ/bin/zsh" 'DOTFILES_INTERACTIVE_ZSH=1\n'
+  hz $s_ "on $HZ/bin/zsh" 'export DOTFILES_INTERACTIVE_ZSH="yes"  # comment\n'
+  hz $s_ "no off*" 'DOTFILES_INTERACTIVE_ZSH=1\nDOTFILES_INTERACTIVE_ZSH=0\n'
+  hz $s_ "no off*" 'DOTFILES_INTERACTIVE_ZSH=1\n' DOTFILES_INTERACTIVE_ZSH=0
+  hz $s_ "on $HZ/bin/zsh" '' DOTFILES_INTERACTIVE_ZSH=1
+  hz $s_ "no off for this shell*" 'DOTFILES_INTERACTIVE_ZSH=1\n' DOTFILES_NO_ZSH=1
+  hz $s_ "no off (Unraid*" 'DOTFILES_INTERACTIVE_ZSH=1\n' DOTFILES_SYSROOT="$TMP/sys-unraid"
+  hz $s_ "on /bin/sh" "DOTFILES_INTERACTIVE_ZSH=1\nDOTFILES_ZSH='/bin/sh'\n"
+  hz $s_ "no inactive (DOTFILES_ZSH must be an absolute*" 'DOTFILES_INTERACTIVE_ZSH=1\nDOTFILES_ZSH=bin/zsh\n'
+  hz $s_ "no inactive (/nonexistent/zsh is not*" 'DOTFILES_INTERACTIVE_ZSH=1\nDOTFILES_ZSH=/nonexistent/zsh\n'
+  hz $s_ "no inactive (zsh not found*" 'DOTFILES_INTERACTIVE_ZSH=1\n' PATH="$HZ/nozsh"
+  hz $s_ "no off*" '' XDG_CONFIG_HOME="$HZ/xdg"
+done
+printf 'DOTFILES_INTERACTIVE_ZSH=1\n' >"$HZ/xdg/dotfiles/local.conf"
+hz sh "on $HZ/bin/zsh" '' XDG_CONFIG_HOME="$HZ/xdg"
+hz sh "no off*" 'DOTFILES_INTERACTIVE_ZSH=$(touch "$HOME/pwned")\ntouch "$HOME/pwned"\n'
+[ ! -e "$HZ/pwned" ] && pass "local.conf is read, never executed" || fail "local.conf content was executed"
+
+# The original Debian 11 failure: zsh -i -c ending in an external command,
+# then bash -i, from a script run by an interactive shell on a terminal.
+if has python3 && has zsh; then
+  cat >"$TMP/jc.sh" <<EOF
+. "$ROOT/scripts/lib.sh"
+no_tty env -i HOME="$TMP" PATH=/usr/bin:/bin zsh -f -i -c 'cat /dev/null' >/dev/null 2>&1
+no_tty env -i HOME="$TMP" PATH=/usr/bin:/bin bash --norc -i -c exit >/dev/null 2>&1
+echo "JC-\$((40 + 2))"
+EOF
+  out=$(python3 -I tests/pty-run.py --timeout 30 --line "bash $TMP/jc.sh; jobs; exit" -- \
+    env -i HOME="$TMP" PATH="$PATH" TERM=xterm-256color bash --norc --noprofile -i 2>&1 | tr -d '\r')
+  printf '%s\n' "$out" | grep -q 'JC-42$' && ! printf '%s\n' "$out" | grep -q Stopped &&
+    pass "interactive-shell checks do not stop the caller on a terminal (job control)" ||
+    fail "interactive-shell checks on a terminal: $(printf '%s' "$out" | tail -n 3)"
+else
+  skip "python3 or zsh missing: terminal job-control check"
+fi
+
+# --------------------------------------------------------------------
 section "installer in a temporary HOME"
 H="$TMP/home"
 mkdir -p "$H"
 # Clean environment: no real HOME, XDG paths, or local tool overrides.
+# no_tty: interactive shells and the installer never get this terminal.
 sandbox() {
-  env -i HOME="$H" PATH="$PATH" TERM=xterm-256color LANG="${LANG:-C.UTF-8}" \
+  no_tty env -i HOME="$H" PATH="$PATH" TERM=xterm-256color LANG="${LANG:-C.UTF-8}" \
     TIMESTAMP="${TS:-20000101-000000}" NO_COLOR=1 \
     ${DOTFILES_UNAME_TEST:+DOTFILES_UNAME=$DOTFILES_UNAME_TEST} \
     ${DOTFILES_SYSROOT_TEST:+DOTFILES_SYSROOT=$DOTFILES_SYSROOT_TEST} \
@@ -274,7 +388,10 @@ expect_link() {
 expect_link .zshrc config/zsh/zshrc
 expect_link .tmux.conf config/tmux/tmux.conf
 expect_link .config/starship.toml config/starship/starship.toml
-case "$(uname -s)" in Darwin | Linux) expect_link .config/wezterm/wezterm.lua config/wezterm/wezterm.lua ;; esac
+# As in install.sh: macOS always, Linux only where WezTerm is installed.
+if [ "$(uname -s)" = Darwin ] || { [ "$(uname -s)" = Linux ] && has wezterm; }; then
+  expect_link .config/wezterm/wezterm.lua config/wezterm/wezterm.lua
+fi
 
 B="$H/.dotfiles-backups/20000101-000001"
 cmp -s "$B/.zshrc" "$TMP/orig.zshrc" && pass "original .zshrc backed up" || fail "missing .zshrc backup"
@@ -309,13 +426,13 @@ if has zsh; then
     n=$(sandbox zsh -i -c 'print -l $precmd_functions' 2>/dev/null | grep -c 'starship_precmd$')
     [ "$n" = 1 ] && pass "starship initialized exactly once" || fail "starship initialized $n times"
   fi
-  err=$(env -i HOME="$H" PATH=/usr/bin:/bin HOMEBREW_PREFIX=/nonexistent TERM=xterm-256color \
+  err=$(no_tty env -i HOME="$H" PATH=/usr/bin:/bin HOMEBREW_PREFIX=/nonexistent TERM=xterm-256color \
     zsh -i -c 'll >/dev/null; lt >/dev/null; catp /dev/null' 2>&1 >/dev/null | filter)
   [ -z "$err" ] && pass "zsh degrades cleanly without optional tools" || fail "zsh without tools: $err"
 fi
 err=$(sandbox bash -i -c exit 2>&1 >/dev/null | filter)
 [ -z "$err" ] && pass "bash starts without errors" || fail "bash startup: $err"
-err=$(env -i HOME="$H" PATH=/usr/bin:/bin TERM=xterm-256color bash -i -c 'll >/dev/null' 2>&1 >/dev/null | filter)
+err=$(no_tty env -i HOME="$H" PATH=/usr/bin:/bin TERM=xterm-256color bash -i -c 'll >/dev/null' 2>&1 >/dev/null | filter)
 [ -z "$err" ] && pass "bash degrades cleanly without optional tools" || fail "bash without tools: $err"
 
 # Uninstall: a link the user replaced must survive.
@@ -359,12 +476,12 @@ grep -q 'platform: linux' "$TMP/vdi-dry.out" && pass "installer detects linux" |
 TS=20000101-000010 VDI ./install.sh --yes --no-packages --skip-validate >"$TMP/vdi.out" 2>&1 || fail "VDI install: $(tail -n 3 "$TMP/vdi.out")"
 [ ! -e "$H/.config/wezterm/wezterm.lua" ] && pass "no WezTerm config on a host without WezTerm" || fail "WezTerm config linked on headless host"
 head -n 4 "$H/.bashrc" | cmp -s - "$TMP/vdi.bashrc" && pass "existing ~/.bashrc content kept" || fail "~/.bashrc content changed"
-out=$(env -i HOME="$H" PATH="$PATH" TERM=xterm-256color bash -i -c 'tm; echo "$WORK_PROXY_NOTE"; type deploy-story >/dev/null && echo alias-ok' 2>/dev/null | paste -sd' ' -)
+out=$(no_tty env -i HOME="$H" PATH="$PATH" TERM=xterm-256color bash -i -c 'tm; echo "$WORK_PROXY_NOTE"; type deploy-story >/dev/null && echo alias-ok' 2>/dev/null | paste -sd' ' -)
 [ "$out" = "user-tm keep alias-ok" ] && pass "bash keeps work aliases, variables and a user tm function" || fail "bash preservation: $out"
 if has zsh; then
-  out=$(env -i HOME="$H" PATH="$PATH" TERM=xterm-256color zsh -i -c 'tm; echo $WORK_ENV' 2>/dev/null | paste -sd' ' -)
+  out=$(no_tty env -i HOME="$H" PATH="$PATH" TERM=xterm-256color zsh -i -c 'tm; echo $WORK_ENV' 2>/dev/null | paste -sd' ' -)
   [ "$out" = "user-tm-zsh keep-zsh" ] && pass "zsh loads ~/.zshrc.local, and its tm wins" || fail "zsh local override: $out"
-  out=$(env -i HOME="$H" PATH="$PATH" TERM=xterm-256color zsh -i -c 'whence -w tmux-send tmux-workspace z' 2>/dev/null | paste -sd' ' -)
+  out=$(no_tty env -i HOME="$H" PATH="$PATH" TERM=xterm-256color zsh -i -c 'whence -w tmux-send tmux-workspace z' 2>/dev/null | paste -sd' ' -)
   case "$out" in *"tmux-send: function"*"tmux-workspace: function"*) pass "zsh defines the tmux helpers" ;; *) fail "zsh helpers: $out" ;; esac
 fi
 TS=20000101-000011 VDI ./install.sh --yes --no-packages --skip-validate >"$TMP/vdi2.out" 2>&1

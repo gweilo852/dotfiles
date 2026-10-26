@@ -1,0 +1,12 @@
+# ~/.config/dotfiles/local.conf: machine-local dotfiles settings. Not managed.
+# Read (not executed) by config/shell/zsh-handoff.sh: only NAME=value lines
+# count, and the last one wins. An environment variable of the same name
+# wins over this file. Never commit this file.
+
+# Start zsh from interactive bash and in new tmux windows, for an account
+# whose login shell must stay bash (Active Directory). 1 = on, 0 = off.
+# ./install.sh --interactive-zsh adds this line in a marked block.
+# DOTFILES_INTERACTIVE_ZSH=1
+
+# The zsh to start. Default: the first zsh on PATH.
+# DOTFILES_ZSH=/usr/bin/zsh

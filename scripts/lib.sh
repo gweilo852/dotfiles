@@ -49,6 +49,22 @@ run() {
 }
 has() { command -v "$1" >/dev/null 2>&1; }
 
+# Run a command in a new session, without a controlling terminal, with
+# stdin from /dev/null. Use it for every check that starts an interactive
+# shell (zsh -i, bash -i). On a terminal, such a shell makes its own process
+# group the foreground group. zsh execs the last command of -c and never
+# gives the terminal back; a later bash -i then stops the caller with
+# SIGTTIN ("Stopped" over SSH, seen on Debian 11 with bash 5.1).
+no_tty() {
+  if has perl; then
+    perl -MPOSIX -e 'POSIX::setsid(); exec { $ARGV[0] } @ARGV or die "$ARGV[0]: $!\n"' "$@" </dev/null
+  elif has setsid; then
+    setsid -w "$@" </dev/null
+  else
+    "$@" </dev/null
+  fi
+}
+
 confirm() { # $1 = question. Returns 0 for yes.
   [ "$ASSUME_YES" = 1 ] && return 0
   [ -t 0 ] || return 1
@@ -128,12 +144,29 @@ init_state_paths() { # $1 = platform
   fi
   MANIFEST="$STATE_DIR/manifest.tsv"
   BACKUP_DIR="$BACKUP_ROOT/$TIMESTAMP"
+  # Machine-local settings (config/shell/zsh-handoff.sh). Owned by the user.
+  # shellcheck disable=SC2034 # read by install.sh, uninstall.sh, doctor.sh
+  LOCAL_CONF="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/local.conf"
+}
+
+# The file that a bash login shell (SSH) reads: the first of these that
+# exists. Prints nothing when none exists.
+bash_login_file() {
+  local f
+  for f in .bash_profile .bash_login .profile; do
+    if [ -f "$HOME/$f" ]; then
+      echo "$HOME/$f"
+      return
+    fi
+  done
 }
 
 # --------------------------------------------------------------------
 # Manifest: one TSV line per change, so uninstall touches only our files.
 #   kind  target  source  backup
 # kinds: link, block, gitinclude, copy
+# An empty backup field on a block or gitinclude means the file did not
+# exist before; uninstall then deletes it when nothing else is left in it.
 # --------------------------------------------------------------------
 
 manifest_add() {
@@ -252,6 +285,7 @@ migrate_zshrc() { # $1 = previous ~/.zshrc (usually its backup copy)
   fi
   if [ -z "$src" ]; then
     run cp "$DOTFILES_DIR/config/zsh/zshrc.local.example" "$dest"
+    run chmod 600 "$dest"
     change "create $dest from the example"
     return 0
   fi

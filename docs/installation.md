@@ -55,7 +55,10 @@ for your CPU (x86_64 or aarch64), checks each SHA-256 value, and installs
 the binaries into `~/.local/bin`. Nothing downloaded is run during the
 installation.
 
-To make zsh the login shell: `chsh -s "$(command -v zsh)"`. If you stay
+To make zsh the login shell: `chsh -s "$(command -v zsh)"`. When `chsh` is
+not allowed (an Active Directory account), use `./install.sh
+--interactive-zsh` instead; see [active-directory.md](active-directory.md).
+If you stay
 with bash, the block in `~/.bashrc` gives you the same prompt and tools.
 
 ## Linux VDI
@@ -175,5 +178,7 @@ Then delete the directory if you want. A reboot also removes every link.
 - Run a script downloaded from the internet.
 - Overwrite a file without a backup and a message.
 - Delete `~/.oh-my-zsh`, `~/.ssh`, kubeconfig files or shell history.
-- Change the login shell.
+- Change the login shell, run `chsh`, or edit `/etc/passwd`. The opt-in
+  `--interactive-zsh` starts zsh from bash instead.
+- Start, stop, reload or send keys to a tmux server.
 - Write to `/boot` on Unraid.

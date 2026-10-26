@@ -20,6 +20,13 @@ Usage: ./install.sh [options]
       --windows-wezterm  WSL only: copy the WezTerm config to the Windows
                          user profile (%USERPROFILE%\.wezterm.lua).
       --unraid           Required on Unraid. Selects the minimal Unraid mode.
+      --interactive-zsh  Start zsh from interactive bash and in new tmux
+                         windows, for an account whose login shell must stay
+                         bash (Active Directory). Sets
+                         DOTFILES_INTERACTIVE_ZSH=1 in
+                         ~/.config/dotfiles/local.conf. Not on Unraid.
+      --no-interactive-zsh
+                         Remove that setting again (back up first).
       --skip-validate    Do not run the validation step.
   -h, --help             Show this help.
 EOF
@@ -27,6 +34,7 @@ EOF
 
 ORIG_ARGS=("$@")
 NO_PACKAGES=0 RELEASE_BINARIES=0 WINDOWS_WEZTERM=0 UNRAID_OK=0 VALIDATE=1
+INTERACTIVE_ZSH="" # 1 = turn on, 0 = turn off, empty = leave as it is
 while [ $# -gt 0 ]; do
   case "$1" in
     -n | --dry-run) DRY_RUN=1 ;;
@@ -35,6 +43,8 @@ while [ $# -gt 0 ]; do
     --release-binaries) RELEASE_BINARIES=1 ;;
     --windows-wezterm) WINDOWS_WEZTERM=1 ;;
     --unraid) UNRAID_OK=1 ;;
+    --interactive-zsh) INTERACTIVE_ZSH=1 ;;
+    --no-interactive-zsh) INTERACTIVE_ZSH=0 ;;
     --skip-validate) VALIDATE=0 ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; die "unknown option: $1" ;;
@@ -61,6 +71,7 @@ case "$PLATFORM" in
       die "Unraid detected. Unraid mode must be selected explicitly: ./install.sh --unraid
 See docs/installation.md#unraid before you continue."
     fi
+    [ "$INTERACTIVE_ZSH" = 1 ] && die "--interactive-zsh is not available on Unraid; Unraid uses bash"
     # $HOME and / live in RAM on Unraid, and /boot is FAT32 (no symlinks).
     case "$DOTFILES_DIR" in
       /mnt/*) ;;
@@ -140,10 +151,45 @@ fi
 
 # Bash keeps the distribution's own ~/.bashrc and only adds a source line.
 ensure_block "$HOME/.bashrc" bash "[ -r \"$C/bash/bashrc\" ] && . \"$C/bash/bashrc\""
-if [ -f "$HOME/.bash_profile" ] && ! grep -q 'bashrc' "$HOME/.bash_profile"; then
-  ensure_block "$HOME/.bash_profile" bash_profile \
-    "case \$- in *i*) [ -r \"\$HOME/.bashrc\" ] && . \"\$HOME/.bashrc\" ;; esac"
+
+# A bash login shell (SSH) reads one profile file and not ~/.bashrc. Most
+# distributions' ~/.profile already loads ~/.bashrc; if the file that bash
+# reads does not, add a block. The guard keeps sh and dash out, because
+# they also read ~/.profile. With --interactive-zsh and no profile file at
+# all, create ~/.profile, because the handoff starts from ~/.bashrc.
+login_file=$(bash_login_file)
+if [ -z "$login_file" ] && [ "$INTERACTIVE_ZSH" = 1 ]; then
+  login_file="$HOME/.profile"
 fi
+if [ -n "$login_file" ] && ! grep -q 'bashrc' "$login_file" 2>/dev/null; then
+  ensure_block "$login_file" bash_profile \
+    "case \$- in *i*) [ -n \"\${BASH_VERSION:-}\" ] && [ -r \"\$HOME/.bashrc\" ] && . \"\$HOME/.bashrc\" ;; esac"
+fi
+
+# Interactive zsh handoff: a machine-local setting, in a marked block.
+case "$INTERACTIVE_ZSH" in
+  1)
+    has zsh || warn "zsh not found; the handoff stays inactive until zsh is on PATH or DOTFILES_ZSH is set"
+    ensure_block "$LOCAL_CONF" interactive-zsh "# Interactive bash and new tmux windows start zsh. The login shell stays.
+# Turn off: ./install.sh --no-interactive-zsh (docs/active-directory.md)
+DOTFILES_INTERACTIVE_ZSH=1"
+    ;;
+  0)
+    if [ -f "$LOCAL_CONF" ] && grep -qF "$(block_begin interactive-zsh)" "$LOCAL_CONF"; then
+      backup=$(backup_path "$LOCAL_CONF" copy) || die "cannot back up $LOCAL_CONF"
+      change "back up $LOCAL_CONF -> $backup"
+      [ "$DRY_RUN" = 1 ] || remove_block "$LOCAL_CONF" interactive-zsh
+      change "remove interactive-zsh block from $LOCAL_CONF"
+    else
+      ok "interactive zsh handoff: no managed setting in $LOCAL_CONF"
+    fi
+    outside=$(awk -v b="$(block_begin interactive-zsh)" -v e="$(block_end interactive-zsh)" '
+      $0 == b { s = 1; next } $0 == e { s = 0; next }
+      !s && /^[[:space:]]*(export[[:space:]]+)?DOTFILES_INTERACTIVE_ZSH=/ { print NR }
+    ' "$LOCAL_CONF" 2>/dev/null | paste -sd, -)
+    [ -z "$outside" ] || warn "$LOCAL_CONF line(s) $outside set DOTFILES_INTERACTIVE_ZSH outside the managed block; edit them by hand"
+    ;;
+esac
 
 if has git; then
   if git config --global --get-all include.path 2>/dev/null | grep -qxF "$C/git/config"; then
@@ -188,6 +234,13 @@ else
   [ -d "$BACKUP_DIR" ] && echo "  backups:  $BACKUP_DIR"
   echo "  manifest: $MANIFEST"
   echo "  local settings (never managed): ~/.zshrc.local, ~/.config/wezterm/wezterm_local.lua"
+  # shellcheck source=config/shell/zsh-handoff.sh
+  . "$C/shell/zsh-handoff.sh"
+  if _dotfiles_zsh_handoff_target; then
+    echo "  interactive zsh handoff: on ($_dotfiles_zsh). Log in again; \$SHELL still shows bash."
+  else
+    echo "  interactive zsh handoff: $_dotfiles_zsh_why"
+  fi
   echo "  start a new shell to load the configuration: exec \$SHELL -l"
   if [ "$PLATFORM" = unraid ]; then
     echo

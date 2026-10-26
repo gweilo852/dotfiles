@@ -1,0 +1,60 @@
+# Unprivileged validation on Ubuntu, macOS and Debian 11 (bash 5.1,
+# zsh 5.8, tmux 3.1c, mawk). No secrets. The test suites block sudo,
+# package managers and downloads themselves; only the "install test tools"
+# steps use the runner's package manager.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zsh tmux shellcheck
+      - name: scripts/test.sh
+        run: scripts/test.sh
+      - name: scripts/test-clean-install.sh
+        run: scripts/test-clean-install.sh
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install test tools
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: brew install tmux shellcheck
+      - name: scripts/test.sh
+        run: scripts/test.sh
+      - name: scripts/test-clean-install.sh
+        run: scripts/test-clean-install.sh
+
+  debian-11:
+    runs-on: ubuntu-latest
+    container: debian:11
+    steps:
+      # The image names its package snapshot in sources.list (commented).
+      # The live bullseye-security archive no longer matches it.
+      - name: Install test tools
+        run: |
+          sed -i -e 's/^deb /#deb /' \
+            -e 's|^# deb http://snapshot|deb [check-valid-until=no] http://snapshot|' /etc/apt/sources.list
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            bash zsh tmux git python3 procps ncurses-bin ca-certificates perl >/dev/null
+          useradd -m -s /bin/bash tester
+      - uses: actions/checkout@v4
+      - name: Test as an unprivileged user
+        run: |
+          chown -R tester: "$GITHUB_WORKSPACE"
+          su tester -c "cd '$GITHUB_WORKSPACE' && scripts/test.sh && scripts/test-clean-install.sh"

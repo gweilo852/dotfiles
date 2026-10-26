@@ -68,14 +68,36 @@ undo_link() { # target source backup
   fi
 }
 
-undo_block() { # file marker
-  if [ -f "$1" ] && grep -qF "$(block_begin "$2")" "$1"; then
-    [ "$DRY_RUN" = 1 ] || remove_block "$1" "$2"
+# A file that install.sh created (empty backup field) is deleted when only
+# blank lines are left in it. A file with any other content stays.
+undo_block() { # file marker [backup]
+  local left="" tmp
+  if [ $# -ge 3 ] && [ -z "$3" ] && [ -f "$1" ] && [ ! -L "$1" ] && ! grep -q '[^[:space:]]' "$1"; then
+    # Created by install.sh, and the block is gone already (for example
+    # after install.sh --no-interactive-zsh).
+    run rm "$1"
+    change "remove $1 (created by install.sh, now empty)"
+  elif [ -f "$1" ] && grep -qF "$(block_begin "$2")" "$1"; then
+    if [ "$DRY_RUN" = 1 ]; then
+      # Show what would be left, from a temporary copy.
+      tmp=$(mktemp) && cp "$1" "$tmp" && remove_block "$tmp" "$2" && left=$(grep '[^[:space:]]' "$tmp" || true)
+      rm -f "$tmp"
+    else
+      remove_block "$1" "$2"
+      left=$(grep '[^[:space:]]' "$1" || true)
+    fi
     change "remove $2 block from $1"
+    # A file that install.sh created (empty backup field) is deleted when
+    # only blank lines are left in it.
+    if [ $# -ge 3 ] && [ -z "$3" ] && [ -z "$left" ] && [ ! -L "$1" ]; then
+      run rm "$1"
+      change "remove $1 (created by install.sh, now empty)"
+    fi
   fi
 }
 
-undo_gitinclude() { # source
+undo_gitinclude() { # source [backup]
+  local cfg="$HOME/.gitconfig"
   has git || return 0
   if git config --global --get-all include.path 2>/dev/null | grep -qxF "$1"; then
     # --fixed-value needs git 2.30+; older git takes an escaped regex.
@@ -83,6 +105,13 @@ undo_gitinclude() { # source
       run git config --global --unset-all include.path \
         "^$(printf '%s' "$1" | sed 's/[][\\.*^$/]/\\&/g')\$"
     change "remove include.path $1 from ~/.gitconfig"
+    # git leaves an empty [include] section behind.
+    if [ $# -ge 2 ] && [ -z "$2" ] && [ -f "$cfg" ] && [ "$DRY_RUN" != 1 ] &&
+      [ -z "$(git config --global --list 2>/dev/null)" ] &&
+      ! grep -vE '^[[:space:]]*(\[include\])?[[:space:]]*$' "$cfg" | grep -q .; then
+      run rm "$cfg"
+      change "remove $cfg (created by install.sh, now empty)"
+    fi
   fi
 }
 
@@ -108,8 +137,8 @@ if [ -f "$MANIFEST" ]; then
     mark "$key"
     case "$kind" in
       link) undo_link "$target" "$src" "$backup" ;;
-      block) undo_block "$target" "$src" ;;
-      gitinclude) undo_gitinclude "$src" ;;
+      block) undo_block "$target" "$src" "$backup" ;;
+      gitinclude) undo_gitinclude "$src" "$backup" ;;
       copy) undo_copy "$target" "$src" "$backup" ;;
       *) warn "unknown manifest entry: $kind" ;;
     esac
@@ -131,11 +160,15 @@ else
     fi
   done
   undo_block "$HOME/.bashrc" bash
-  undo_block "$HOME/.bash_profile" bash_profile
+  for f in .bash_profile .bash_login .profile; do
+    undo_block "$HOME/$f" bash_profile
+  done
+  undo_block "$LOCAL_CONF" interactive-zsh
   undo_gitinclude "$DOTFILES_DIR/config/git/config"
 fi
 
 echo
 info "$CHANGES change(s), $WARNINGS warning(s)$([ "$DRY_RUN" = 1 ] && echo '; nothing changed')"
 echo "  kept: packages, ~/.zshrc.local, wezterm_local.lua, and backups in $BACKUP_ROOT"
+[ -f "$LOCAL_CONF" ] && echo "  kept: $LOCAL_CONF (your own settings in it are not managed)"
 [ -L "$HOME/.zshrc" ] || [ -e "$HOME/.zshrc" ] || echo "  note: no ~/.zshrc remains; zsh starts with its defaults"

@@ -7,6 +7,7 @@ plugins and no plugin manager. Files:
 | --- | --- |
 | `config/tmux/tmux.conf` | the configuration (`~/.tmux.conf` links to it) |
 | `config/tmux/clipboard.sh` | copies to the local clipboard when a tool exists |
+| `config/tmux/shell.sh` | selects the shell for new windows (zsh with the handoff on) |
 | `config/tmux/tmux.conf.local.example` | template for `~/.tmux.conf.local` |
 | `config/shell/tmux.sh` | shell helpers: `tm`, `tmux-workspace`, `tmux-send` |
 
@@ -90,6 +91,40 @@ To see which tool this machine uses:
 On WSL, `clip.exe` can mangle non-ASCII text; OSC 52 to WezTerm does not.
 Paste from the system clipboard with the terminal's paste key (Cmd+V on
 macOS, Ctrl+Shift+V in WezTerm on Windows and Linux).
+
+## Shell for new windows
+
+tmux starts `default-shell` in every new window and pane. Each time the
+configuration loads (also `prefix r`), `tmux.conf` runs `shell.sh`:
+
+| Situation | `default-shell` |
+| --- | --- |
+| Interactive zsh handoff on (`DOTFILES_INTERACTIVE_ZSH=1` in `~/.config/dotfiles/local.conf`) | that zsh: `DOTFILES_ZSH`, else the first `zsh` on PATH |
+| Handoff off (the default) | the tmux default: `$SHELL` of the process that started the server, else the account's login shell |
+| Unraid | always the tmux default (never zsh) |
+| `DOTFILES_NO_ZSH` set when the server starts | the tmux default |
+| zsh missing, or `DOTFILES_ZSH` not executable | the tmux default |
+
+No path is fixed in the configuration. `shell.sh` keeps the server's own
+first choice in `@dotfiles_default_shell`, so that `prefix r` can go back to
+it after you turn the handoff off. It talks only to the server that runs it
+(through `$TMUX`); it never touches another server.
+
+```sh
+tmux show -gv default-shell             # the shell for new windows
+~/dotfiles/config/tmux/shell.sh --print # what shell.sh would choose, and why
+```
+
+To force a shell on one machine, set it in `~/.tmux.conf.local`, which loads
+after `shell.sh` and wins:
+
+```tmux
+set -g default-shell /usr/bin/zsh
+```
+
+A change applies to new windows after `prefix r`, or in a new server.
+Running servers, sessions and windows are never changed by the installer.
+The background: [active-directory.md](active-directory.md).
 
 ## Status bar
 
@@ -260,5 +295,6 @@ usual windows.
 | Text selection with the mouse does not work | Hold Shift while you drag, or `set -g mouse off` in `~/.tmux.conf.local`. |
 | A key does nothing | `tmux list-keys \| grep <key>`; check `~/.tmux.conf.local`. |
 | Changes do not apply | prefix `r`. Some options apply only to new windows or new servers. |
+| New windows start bash, not zsh (or the reverse) | `tmux show -gv default-shell` and `config/tmux/shell.sh --print`. After a change to `local.conf`, press prefix `r`; windows that exist keep their shell. |
 | Escape is slow in vim | `escape-time` is 10 ms; lower it in the local file if needed. |
 | The status label is empty or wrong | `TMUX_HOST_LABEL` comes from the shell that created the session. Set it in the local shell file, then start a new session, or `tmux set-environment -g TMUX_HOST_LABEL VDI`. |

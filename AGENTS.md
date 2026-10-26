@@ -33,14 +33,24 @@ machine. Machine-specific content does not belong here.
   `~/.zshrc.local`, then `plugins.zsh` (fzf, zoxide, autosuggestions,
   Starship, syntax highlighting last).
 - `config/bash/bashrc` is sourced from a marked block in `~/.bashrc` and
-  uses the same `env.sh` and `aliases.sh`.
+  uses the same `env.sh` and `aliases.sh`. At its end is the opt-in
+  interactive zsh handoff: a one-time `PROMPT_COMMAND` hook that runs
+  `exec zsh` before the first prompt.
+- `config/shell/zsh-handoff.sh` (POSIX sh) is the only place that decides
+  whether the handoff applies. It reads, never executes,
+  `~/.config/dotfiles/local.conf` (`DOTFILES_INTERACTIVE_ZSH`,
+  `DOTFILES_ZSH`). bashrc, `config/tmux/shell.sh`, `doctor.sh`,
+  `install.sh` and the tests all use it.
 - `config/shell/tmux.sh` defines the tmux helpers (`tm`, `tmux-workspace`,
   `tmux-send`) only when the name is free, so user definitions win.
 - `config/tmux/tmux.conf` is the single tmux config. It uses no plugins.
   Version-sensitive settings must work on tmux 2.6. `clipboard.sh` picks
   the local clipboard tool; OSC 52 (`set-clipboard on`) is the main path.
   Unraid gets a minimal profile through an `if-shell` on
-  `/etc/unraid-version`.
+  `/etc/unraid-version`. It runs `shell.sh` on every load, which sets
+  `default-shell` to zsh when the handoff applies, and otherwise restores
+  the server's first value. `shell.sh` addresses only the server in
+  `$TMUX`, never the default socket.
 - `config/starship/starship.toml` holds the prompt and the ordered Kubernetes
   context rules. `tests/k8s-contexts.tsv` lists the expected display for each
   context pattern.
@@ -53,6 +63,8 @@ machine. Machine-specific content does not belong here.
 | `~/.bashrc` | user | The repository owns only its marked block. |
 | `~/.gitconfig` | user | The repository owns only one `include.path` line. |
 | `~/.zshrc.local`, `~/.tmux.conf.local`, `wezterm_local.lua` | user | Never create content in them after the first install, never delete them. |
+| `~/.config/dotfiles/local.conf` | user | The repository owns only the `interactive-zsh` marked block, written only on `--interactive-zsh`. |
+| `~/.profile`, `~/.bash_profile`, `~/.bash_login` | user | The repository owns only the `bash_profile` block, added only when the file that bash reads does not load `~/.bashrc`. |
 | `~/.ssh`, kubeconfig, shell history, `~/.oh-my-zsh` | user | Never read their contents into the repository; never modify or delete them. |
 
 ## Installation safety requirements
@@ -85,6 +97,19 @@ properties. `scripts/test.sh` checks most of them.
     (VDI, Unraid).
 13. Shell initialization runs once: one compinit, one Starship init, plugins
     guarded against a second load.
+14. The zsh handoff is opt-in and never runs `chsh`, edits `/etc/passwd`,
+    or needs root. It runs only for an interactive bash with a terminal on
+    stdin and stdout, no `-c` command, `TERM` not empty or `dumb`, no
+    `DOTFILES_NO_ZSH`, no `DOTFILES_ZSH_HANDOFF` (no loop), not on Unraid,
+    and a zsh that starts. Non-interactive bash, scp, sftp and scripts
+    must not change. A failed handoff leaves a configured bash.
+15. A check that starts an interactive shell (`bash -i`, `zsh -i`) runs
+    through `no_tty` (`scripts/lib.sh`), so it never takes over the
+    caller's terminal. Without it, `scripts/test.sh` stopped with SIGTTIN
+    over SSH on Debian 11.
+16. A file that install.sh creates has an empty backup field in the
+    manifest. Uninstall deletes it only when nothing but blank lines is
+    left in it.
 
 ## Testing expectations
 
@@ -92,6 +117,7 @@ Run before every commit:
 
 ```sh
 scripts/test.sh
+scripts/test-clean-install.sh
 ```
 
 It checks shell syntax (bash and zsh), shellcheck, the WezTerm config, the
@@ -108,6 +134,21 @@ refusals, and secret leakage. A check whose tool is missing is skipped.
   not run `install.sh` against the real home directory during development
   unless the owner asks for it.
 - `scripts/doctor.sh` checks a real installed machine. It changes nothing.
+- `scripts/test-clean-install.sh` runs the real installer and uninstaller
+  in one `mktemp -d` directory under `/tmp` (`HOME`, `XDG_*`,
+  `TMUX_TMPDIR`). It blocks sudo, package managers, chsh and downloads,
+  and checks that the real home is unchanged. Add a scenario there for
+  every new installer option. Do not reimplement installer logic in it.
+- Test interactive behaviour on a real pseudo-terminal with
+  `tests/pty-run.py` when practical. Simulated `bash -i -c` is not enough
+  for the handoff.
+- tmux tests use `-L` with a unique name or a `TMUX_TMPDIR` inside the test
+  directory. Never use the default socket, and never kill a server that
+  the test did not start.
+- awk must work with mawk 1.3.4 (Debian 11): no regex intervals such as
+  `{64}`.
+- CI (`.github/workflows/test.yml`) runs both suites on Ubuntu, macOS and
+  Debian 11. Keep it unprivileged and free of secrets.
 - Report test results with their real output. Say which checks were skipped.
 
 ## Security rules
@@ -135,6 +176,11 @@ refusals, and secret leakage. A check whose tool is missing is skipped.
 - Debian and Ubuntu: `bat` is `batcat`, and old releases lack `eza`,
   `starship` or a recent `fzf`. The aliases and plugin loaders handle this;
   `--release-binaries` fills the gaps.
+- Debian 11: bash 5.1, zsh 5.8, tmux 3.1c, mawk, fzf 0.24 (no `fzf
+  --bash`/`--zsh`), zoxide 0.4.3. `~/.profile` loads `~/.bashrc` and then
+  adds `~/.local/bin` again.
+- Active Directory accounts: the login shell cannot change. Use
+  `--interactive-zsh`. `$SHELL` still reports bash; check the process.
 - Linux VDI: often headless, without root, behind a proxy, reached over SSH.
   The WezTerm config is linked on Linux only when `wezterm` exists, zsh is
   configured only when zsh exists, and package installation stops cleanly

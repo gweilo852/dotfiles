@@ -25,6 +25,7 @@ when the last command failed.
 - [Prerequisites](#prerequisites)
 - [Quick installation](#quick-installation)
 - [Manual installation](#manual-installation)
+- [Active Directory environments](#active-directory-environments)
 - [Everyday use](#everyday-use)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [tmux](#tmux)
@@ -33,6 +34,7 @@ when the last command failed.
 - [Uninstallation](#uninstallation)
 - [Customization](#customization)
 - [Troubleshooting](#troubleshooting)
+- [Clean-install testing](#clean-install-testing)
 - [Security](#security)
 - [Repository layout](#repository-layout)
 
@@ -164,7 +166,10 @@ scripts/preflight.sh                                   # read-only report
 scripts/doctor.sh
 ```
 
-To undo: `./uninstall.sh`. The guide also covers a manual restore.
+To undo: `./uninstall.sh`. The guide also covers a manual restore. If the
+account's login shell must stay bash (Active Directory), add
+`--interactive-zsh`; see
+[Active Directory environments](#active-directory-environments).
 
 ### Unraid (Tower)
 
@@ -203,6 +208,47 @@ cp ~/dotfiles/config/zsh/zshrc.local.example ~/.zshrc.local && chmod 600 ~/.zshr
 Then install the tools listed in [docs/tools.md](docs/tools.md).
 `./uninstall.sh` cannot undo manual steps, because they are not in the
 manifest.
+
+## Active Directory environments
+
+**Why the login shell is fixed.** On a corporate VDI, the account usually
+comes from Active Directory (SSSD or Winbind), not from `/etc/passwd`. The
+directory sets the login shell, so `chsh` fails, and you have no root to
+change it. SSH logins start `/bin/bash`.
+
+**How the handoff works.** With the handoff on, the managed bash
+configuration replaces an interactive bash with zsh (`exec zsh -l`) just
+before the first prompt, after every startup file has run. Exported
+variables reach zsh. The login shell stays bash. Nothing changes for
+`ssh host COMMAND`, `bash -c`, `bash -ic`, scp, sftp, rsync, scripts, pipes,
+`TERM=dumb`, or a bash that you start from the zsh. A missing or broken zsh
+leaves you in a fully configured bash.
+
+**Enable** (no root, no `chsh`, no change to `/etc/passwd`):
+
+```sh
+./install.sh --no-packages --interactive-zsh       # --yes to skip the prompt
+```
+
+This writes `DOTFILES_INTERACTIVE_ZSH=1` to the machine-local
+`~/.config/dotfiles/local.conf`, in a marked block, and makes sure that an
+SSH login reads `~/.bashrc`. Log in again. `$SHELL` still reports
+`/bin/bash`, because it is the account's login shell; `ps -o comm= -p $$`
+shows the shell that really runs.
+
+**Disable:** `./install.sh --no-interactive-zsh` (or `./uninstall.sh`). For
+one shell: `DOTFILES_NO_ZSH=1 bash -i`. For one SSH session:
+`ssh -t vdi 'DOTFILES_NO_ZSH=1 exec bash -l'`.
+
+**Troubleshoot:** `scripts/doctor.sh` prints whether the handoff is on, and
+why not. The usual causes are an empty or `dumb` `TERM`, a profile file that
+does not load `~/.bashrc`, or a later line that replaces `PROMPT_COMMAND`.
+
+**tmux:** with the handoff on, new tmux windows start the same zsh
+(`default-shell`); with it off, tmux keeps its default. A running server
+needs `prefix r`, or a new server. Unraid never gets zsh.
+
+Details: [docs/active-directory.md](docs/active-directory.md).
 
 ## Everyday use
 
@@ -387,7 +433,10 @@ The uninstaller reads the manifest
 - removes only links and blocks that the installer made, and only if they
   are unchanged (a file you replaced is left alone, with a warning);
 - restores the newest backup of each file, when nothing else is in its place;
-- removes the `include.path` from `~/.gitconfig`;
+- removes the `include.path` from `~/.gitconfig`, and the interactive zsh
+  setting from `~/.config/dotfiles/local.conf`;
+- deletes a file that the installer created (for example `~/.gitconfig` or
+  `~/.profile`) when nothing else is left in it;
 - keeps packages, `~/.zshrc.local`, `wezterm_local.lua` and all backups.
 
 The Oh My Zsh directory (`~/.oh-my-zsh`) is never touched. Delete it
@@ -412,6 +461,44 @@ Run the health check first:
 It reports missing tools, unmanaged files, duplicate initialization,
 configuration errors, prompt duplication and shell startup time. Common
 problems and fixes are in [docs/troubleshooting.md](docs/troubleshooting.md).
+
+## Clean-install testing
+
+```sh
+./scripts/test-clean-install.sh            # PASS, FAIL or SKIP for each check
+./scripts/test-clean-install.sh --verbose  # also show each installer and shell run
+./scripts/test-clean-install.sh --keep     # keep the test directory, print its path
+```
+
+The script runs the real `install.sh` and `uninstall.sh` against new, empty
+home directories. It checks a clean install, an install over synthetic
+existing configuration, a second run (no changes, no backups, no duplicate
+blocks or includes), uninstall and a repeated uninstall, bash and zsh
+startup, Starship, Git, tmux on its own socket, and the interactive zsh
+handoff on a real pseudo-terminal. `scripts/test.sh` is the faster suite
+(syntax, shellcheck, configuration and unit checks); run both before a
+commit.
+
+**Isolation model.** Everything happens in one `mktemp -d` directory under
+`/tmp`: `HOME`, all `XDG_*` directories, `TMUX_TMPDIR`, backups and the
+manifest. The environment is cleared (`env -i`), system Git configuration
+is ignored, and every interactive shell runs without the caller's terminal.
+Stubs for `sudo`, `chsh`, package managers, `curl` and `wget` come first on
+PATH, record any call, and fail. At the end, the script compares the
+metadata (never the contents) of the real shell, Git, tmux, SSH, Kubernetes,
+cloud and Claude Code files, in `$HOME` and in the home directory from the
+user database. Cleanup on exit, Ctrl+C or termination removes only the
+directory that carries this run's marker.
+
+**Limitations.** A program that ignores `HOME` and reads the user database
+(for example `ssh`) could still see the real home; the installer itself uses
+only `$HOME`, which the test checks. Real packages, real SSH logins and the
+system login shell are not exercised; `docs/vdi.md` lists the manual checks.
+Pseudo-terminal checks need `python3`, and zsh, tmux or Starship checks are
+skipped when the tool is missing.
+
+CI (`.github/workflows/test.yml`) runs both suites on Ubuntu, macOS and
+Debian 11, without secrets or root.
 
 ## Security
 
@@ -443,21 +530,24 @@ dotfiles/
 │   ├── preflight.sh               read-only report before a first install (VDI)
 │   ├── install-release-binaries.sh  pinned, verified release archives
 │   ├── doctor.sh                  health check of an installed machine
-│   └── test.sh                    automated validation
+│   ├── test.sh                    automated validation
+│   └── test-clean-install.sh      end-to-end install test in a temporary home
 ├── config/
 │   ├── wezterm/                   wezterm.lua and a local override example
 │   ├── starship/starship.toml     prompt and Kubernetes rules
 │   ├── zsh/                       zshrc, completion.zsh, plugins.zsh, local example
 │   ├── bash/bashrc                bash for Linux, WSL and Unraid
-│   ├── shell/                     env.sh, aliases.sh and tmux.sh, shared by zsh and bash
-│   ├── tmux/                      tmux.conf, clipboard.sh, local example
+│   ├── shell/                     env.sh, aliases.sh, tmux.sh, zsh-handoff.sh (zsh and bash)
+│   ├── tmux/                      tmux.conf, clipboard.sh, shell.sh, local example
+│   ├── dotfiles/                  local.conf example (machine-local settings)
 │   └── git/config                 delta and diff settings
 ├── platforms/
 │   ├── macos/Brewfile
 │   ├── linux/                     package names and release archive table
 │   └── unraid/user-script.sh      optional relink at boot
-├── tests/                         Kubernetes prompt cases and test
-└── docs/                          installation, VDI, tmux, customization, tools, Kubernetes, troubleshooting
+├── tests/                         Kubernetes prompt cases, pty-run.py (terminal tests)
+├── .github/workflows/test.yml     CI: Ubuntu, macOS, Debian 11
+└── docs/                          installation, VDI, Active Directory, tmux, customization, tools, Kubernetes, troubleshooting
 ```
 
 Maintainers and coding agents: read [AGENTS.md](AGENTS.md) first.

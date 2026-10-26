@@ -17,7 +17,16 @@ ok "kernel: $(uname -sr), CPU: $(uname -m)"
 if [ "$DOTFILES_UNAME" = Linux ] && has ldd; then
   ok "libc: $(ldd --version 2>&1 | head -n 1)"
 fi
-ok "user: $(id -un), login shell: ${SHELL:-unknown}"
+ok "user: $(id -un), login shell: ${SHELL:-unknown}, running: $(ps -o comm= -p "$PPID" 2>/dev/null | sed 's/^-//')"
+# A directory account (Active Directory, LDAP) is not in /etc/passwd, and
+# chsh cannot change its login shell. The handoff starts zsh from bash.
+# Exact field match: directory names can contain regex characters (DOMAIN\user).
+if [ "$DOTFILES_UNAME" = Linux ] && [ -r /etc/passwd ] &&
+  ! DF_USER=$(id -un) awk -F: '$1 == ENVIRON["DF_USER"] { found = 1 } END { exit !found }' /etc/passwd; then
+  login=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)
+  note "directory account (not in /etc/passwd), login shell ${login:-unknown}: chsh cannot change it."
+  note "To use zsh anyway: ./install.sh --interactive-zsh (docs/active-directory.md)"
+fi
 ok "package manager: $(detect_pkg_manager)"
 if [ "$(id -u)" = 0 ]; then
   ok "running as root"
