@@ -136,6 +136,14 @@ C="$DOTFILES_DIR/config"
 if has zsh; then
   link_file "$C/zsh/zshrc" "$HOME/.zshrc"
   migrate_zshrc "${LAST_BACKUP:-}"
+  # Ubuntu (and ID_LIKE=ubuntu) /etc/zsh/zshrc runs its own compinit,
+  # without -i, unless ~/.zshenv sets skip_global_compinit. That is a second
+  # compinit, and it prompts or aborts on insecure directories. The same
+  # condition as in that file; Debian and others are not affected.
+  if grep -qs skip_global_compinit "$DOTFILES_SYSROOT/etc/zsh/zshrc" &&
+    grep -qsE '^ID(_LIKE)?=.*ubuntu' "$DOTFILES_SYSROOT/etc/os-release"; then
+    ensure_block "$HOME/.zshenv" zshenv "skip_global_compinit=1 # compinit runs once, in the managed ~/.zshrc"
+  fi
 else
   info "  zsh not installed: zsh configuration skipped (bash is configured)"
 fi

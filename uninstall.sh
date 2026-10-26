@@ -164,6 +164,7 @@ else
     undo_block "$HOME/$f" bash_profile
   done
   undo_block "$LOCAL_CONF" interactive-zsh
+  undo_block "$HOME/.zshenv" zshenv
   undo_gitinclude "$DOTFILES_DIR/config/git/config"
 fi
 

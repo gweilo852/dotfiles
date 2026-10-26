@@ -495,6 +495,28 @@ VDI ./uninstall.sh --yes >/dev/null 2>&1
 cmp -s "$H/.bashrc" "$TMP/vdi.bashrc" && pass "VDI uninstall restores ~/.bashrc exactly" || fail "VDI uninstall .bashrc"
 grep -q 'keep-zsh' "$H/.zshrc" && [ ! -L "$H/.zshrc" ] && pass "VDI uninstall restores ~/.zshrc" || fail "VDI uninstall .zshrc"
 
+# Ubuntu's /etc/zsh/zshrc runs a second compinit unless ~/.zshenv sets
+# skip_global_compinit; Debian's identical file skips it.
+if has zsh; then
+  for id in ubuntu debian; do
+    S="$TMP/sys-$id-zsh"
+    H="$TMP/$id-zsh-home"
+    mkdir -p "$S/etc/zsh" "$S/proc" "$H"
+    printf 'ID=%s\n' "$id" >"$S/etc/os-release"
+    echo "Linux version 6.8.0-generic" >"$S/proc/version"
+    printf 'if [[ -z "$skip_global_compinit" ]]; then compinit; fi\n' >"$S/etc/zsh/zshrc"
+    TS=20000101-000020 DOTFILES_UNAME_TEST=Linux DOTFILES_SYSROOT_TEST="$S" sandbox ./install.sh --yes --no-packages --skip-validate >/dev/null 2>&1
+    if [ "$id" = ubuntu ]; then
+      grep -q '^skip_global_compinit=1' "$H/.zshenv" 2>/dev/null && pass "Ubuntu: ~/.zshenv skips the global compinit" ||
+        fail "Ubuntu: no skip_global_compinit in ~/.zshenv"
+      DOTFILES_UNAME_TEST=Linux DOTFILES_SYSROOT_TEST="$S" sandbox ./uninstall.sh --yes >/dev/null 2>&1
+      [ ! -e "$H/.zshenv" ] && pass "Ubuntu: uninstall deletes the ~/.zshenv it created" || fail "Ubuntu: ~/.zshenv left after uninstall"
+    else
+      [ ! -e "$H/.zshenv" ] && pass "Debian: no ~/.zshenv block" || fail "Debian: unexpected ~/.zshenv"
+    fi
+  done
+fi
+
 # --------------------------------------------------------------------
 section "Unraid safety"
 H="$TMP/unraid-home"

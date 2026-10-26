@@ -84,7 +84,8 @@ info "duplicate or obsolete initialization"
 # Active (uncommented) lines only. ~/.zshrc itself is the managed file.
 for f in "$HOME/.zshrc.local" "$HOME/.zprofile" "$HOME/.zshenv"; do
   [ -f "$f" ] || continue
-  hits=$(grep -nE '^[[:space:]]*[^#:[:space:]].*(starship init|oh-my-zsh\.sh|ZSH_THEME=|compinit|zoxide init|fzf --zsh|zsh-autosuggestions\.zsh|zsh-syntax-highlighting\.zsh|kube_ps1|kube-ps1|iterm2_shell_integration)' "$f" 2>/dev/null | cut -d: -f1 | paste -sd, -)
+  hits=$(grep -nE '^[[:space:]]*[^#:[:space:]].*(starship init|oh-my-zsh\.sh|ZSH_THEME=|compinit|zoxide init|fzf --zsh|zsh-autosuggestions\.zsh|zsh-syntax-highlighting\.zsh|kube_ps1|kube-ps1|iterm2_shell_integration)' "$f" 2>/dev/null |
+    grep -v 'skip_global_compinit' | cut -d: -f1 | paste -sd, -)
   if [ -n "$hits" ]; then
     warn "$f repeats managed initialization on line(s) $hits"
   else
