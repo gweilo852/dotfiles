@@ -115,6 +115,31 @@ undo_gitinclude() { # source [backup]
   fi
 }
 
+undo_gitconfig() { # key=value [backup]
+  local key=${1%%=*} value=${1#*=} cfg="$HOME/.gitconfig"
+  has git || return 0
+  if git config --global --get-all "$key" 2>/dev/null | grep -qxF "$value"; then
+    run git config --global --fixed-value --unset "$key" "$value" 2>/dev/null ||
+      run git config --global --unset "$key" "^$(printf '%s' "$value" | sed 's/[][\\.*^$/]/\\&/g')\$"
+    change "remove $key = $value from ~/.gitconfig"
+    if [ $# -ge 2 ] && [ -z "$2" ] && [ -f "$cfg" ] && [ "$DRY_RUN" != 1 ] &&
+      [ -z "$(git config --global --list 2>/dev/null)" ] &&
+      ! grep -vE '^[[:space:]]*(\[[^]]*\])?[[:space:]]*$' "$cfg" | grep -q .; then
+      run rm "$cfg"
+      change "remove $cfg (created by install.sh, now empty)"
+    fi
+  fi
+}
+
+undo_dir() { # path
+  if [ -d "$1" ] && [ -z "$(ls -A "$1" 2>/dev/null)" ]; then
+    run rmdir "$1"
+    change "remove empty directory $1"
+  elif [ -d "$1" ]; then
+    info "  kept $1 (not empty)"
+  fi
+}
+
 undo_copy() { # target source backup
   if [ -f "$1" ] && cmp -s "$1" "$2"; then
     run rm "$1"
@@ -140,6 +165,8 @@ if [ -f "$MANIFEST" ]; then
       block) undo_block "$target" "$src" "$backup" ;;
       gitinclude) undo_gitinclude "$src" "$backup" ;;
       copy) undo_copy "$target" "$src" "$backup" ;;
+      gitconfig) undo_gitconfig "$src" "$backup" ;;
+      dir) undo_dir "$target" ;;
       *) warn "unknown manifest entry: $kind" ;;
     esac
   done <<<"$lines"

@@ -595,6 +595,77 @@ if has git; then
 fi
 
 # --------------------------------------------------------------------
+section "projects layout and git identities (--repos)"
+if has git; then
+  H="$TMP/repos-home"
+  mkdir -p "$H"
+  printf '[user]\n\tname = Global Example\n\temail = global@example.net\n' >"$H/.gitconfig"
+  cp "$H/.gitconfig" "$TMP/repos.gitconfig"
+  TS=20000101-000040 sandbox ./install.sh --yes --no-packages --skip-validate --repos >"$TMP/r1.out" 2>&1 ||
+    fail "install --repos: $(tail -n 3 "$TMP/r1.out")"
+  [ -d "$H/projects/personal" ] && [ -d "$H/projects/work" ] && [ -d "$H/projects/scratch" ] &&
+    pass "--repos creates projects/{personal,work,scratch}" || fail "projects directories"
+  grep -q 'git config --file .*identity-work user.email' "$TMP/r1.out" && pass "--repos prints how to create a missing identity" ||
+    fail "no identity instructions"
+  grep -q "mkdir -p $H/.config/git" "$TMP/r1.out" && pass "the identity instructions create the directory first" || fail "identity instructions lack mkdir"
+  mkdir -p "$H/.config/git"
+  for scope in personal work; do
+    HOME="$H" git config --file "$H/.config/git/identity-$scope" user.name "Test ${scope}"
+    HOME="$H" git config --file "$H/.config/git/identity-$scope" user.email "$scope@example.net"
+  done
+  ident() { # directory -> "name <email>" of a new commit, or the error
+    (cd "$1" && HOME="$H" GIT_CONFIG_NOSYSTEM=1 git -c init.defaultBranch=main commit -q --allow-empty -m t 2>&1 | head -n 1 &&
+      HOME="$H" git log -1 --format='%an <%ae>' 2>/dev/null) | tail -n 1
+  }
+  mkrepo() { mkdir -p "$1" && (cd "$1" && HOME="$H" git -c init.defaultBranch=main init -q); }
+  mkrepo "$H/projects/personal/me/dots"
+  mkrepo "$H/projects/work/acme/api"
+  mkrepo "$H/projects/scratch/play"
+  mkrepo "$H/elsewhere"
+  [ "$(ident "$H/projects/personal/me/dots")" = "Test personal <personal@example.net>" ] && pass "personal repository: personal identity" || fail "personal identity: $(ident "$H/projects/personal/me/dots")"
+  [ "$(ident "$H/projects/work/acme/api")" = "Test work <work@example.net>" ] && pass "work repository: work identity" || fail "work identity: $(ident "$H/projects/work/acme/api")"
+  (cd "$H/projects/work/acme/api" && HOME="$H" git worktree add -q "$H/projects/work/acme/.worktrees/api/STORY-1" -b s1 2>/dev/null)
+  [ "$(ident "$H/projects/work/acme/.worktrees/api/STORY-1")" = "Test work <work@example.net>" ] && pass "work worktree: work identity" ||
+    fail "worktree identity: $(ident "$H/projects/work/acme/.worktrees/api/STORY-1")"
+  [ "$(ident "$H/projects/scratch/play")" = "Global Example <global@example.net>" ] && pass "scratch: the global identity" || fail "scratch identity"
+  [ "$(ident "$H/elsewhere")" = "Global Example <global@example.net>" ] && pass "outside projects: the global identity" || fail "outside identity"
+  mv "$H/.config/git/identity-work" "$TMP/identity-work.away"
+  case "$(ident "$H/projects/work/acme/api")" in
+    *"identity unknown"* | *"empty ident"* | *"Please tell me who you are"*) pass "work identity file missing: commit refused, no fallback to the global identity" ;;
+    *) fail "work without identity committed as: $(ident "$H/projects/work/acme/api")" ;;
+  esac
+  mv "$TMP/identity-work.away" "$H/.config/git/identity-work"
+  out=$(sandbox bash scripts/doctor.sh --quick 2>&1)
+  printf '%s' "$out" | grep -q 'git identity for work' && pass "doctor reports the scope identities" || fail "doctor identities"
+  TS=20000101-000041 sandbox ./install.sh --yes --no-packages --skip-validate --repos >"$TMP/r2.out" 2>&1
+  grep -q 'done: 0 change' "$TMP/r2.out" && pass "second install --repos makes no changes" || fail "second --repos: $(grep 'done:' "$TMP/r2.out")"
+  [ "$(HOME="$H" git config --global --get-all "includeIf.gitdir:$H/projects/work/.path" | wc -l | tr -d ' ')" = 2 ] &&
+    pass "one guard and one identity include per scope" || fail "includeIf entries"
+  # A projects root behind a symlink: worktrees still get the scope identity.
+  H2="$TMP/repos-link-home"
+  mkdir -p "$H2/real/projects" "$H2/.config/dotfiles" "$H2/.config/git"
+  ln -s "$H2/real/projects" "$H2/projects"
+  printf 'DOTFILES_PROJECTS=~/projects\n' >"$H2/.config/dotfiles/local.conf"
+  printf '[user]\n\tname = Global Example\n\temail = global@example.net\n' >"$H2/.gitconfig"
+  printf '[user]\n\tname = Link Work\n\temail = linkwork@example.net\n' >"$H2/.config/git/identity-work"
+  H_SAVE=$H H=$H2
+  TS=20000101-000042 sandbox ./install.sh --yes --no-packages --skip-validate --repos >"$TMP/r4.out" 2>&1
+  mkrepo "$H2/projects/work/acme/lib" && ident "$H2/projects/work/acme/lib" >/dev/null
+  (cd "$H2/projects/work/acme/lib" && HOME="$H2" git worktree add -q "$H2/projects/work/acme/.worktrees/lib/S1" -b s1 2>/dev/null)
+  [ "$(ident "$H2/projects/work/acme/.worktrees/lib/S1")" = "Link Work <linkwork@example.net>" ] &&
+    pass "symlinked projects root: a worktree gets the work identity" || fail "symlinked root worktree: $(ident "$H2/projects/work/acme/.worktrees/lib/S1")"
+  H=$H_SAVE
+  rm -rf "$H/projects/scratch/play"
+  sandbox ./uninstall.sh --yes >"$TMP/r3.out" 2>&1
+  [ -z "$(HOME="$H" git config --global --get-regexp '^includeif' 2>/dev/null)" ] && [ -z "$(HOME="$H" git config --global --get user.useConfigOnly)" ] &&
+    pass "uninstall removes the includes and useConfigOnly" || fail "git entries left after uninstall"
+  [ "$(HOME="$H" git config --global user.email)" = global@example.net ] && pass "uninstall keeps the user's global identity" || fail "global identity lost"
+  [ -d "$H/projects/work/acme/api" ] && [ -d "$H/projects/personal/me/dots" ] && [ -f "$H/.config/git/identity-work" ] &&
+    pass "uninstall keeps directories with repositories and the identity files" || fail "uninstall removed user data"
+  [ ! -d "$H/projects/scratch" ] && pass "uninstall removes an empty projects directory it created" || fail "empty scratch kept"
+fi
+
+# --------------------------------------------------------------------
 section "Linux VDI simulation"
 # A Linux host with existing work settings, no root and no desktop.
 H="$TMP/vdi-home"

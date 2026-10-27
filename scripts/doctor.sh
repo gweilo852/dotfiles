@@ -77,6 +77,18 @@ if has git; then
   else
     warn "git include missing"
   fi
+  # Git identities per scope (install.sh --repos).
+  while IFS= read -r idf; do
+      scope=${idf##*identity-}
+      if [ ! -f "$idf" ]; then
+        warn "no git identity for $scope ($idf): commits there stop until you create it (docs/repositories.md)"
+      elif [ -z "$(git config --file "$idf" user.name)" ] || [ -z "$(git config --file "$idf" user.email)" ]; then
+        warn "$idf lacks user.name or user.email"
+      else
+        ok "git identity for $scope: $idf"
+      fi
+    done < <(git config --global --get-regexp '^includeif\.gitdir:.*\.path$' 2>/dev/null |
+      awk '$2 !~ /identity-guard\.config$/ { print $2 }')
   # zdiff3 stops git older than 2.35 on every commit and merge.
   if [ "$(git config --get merge.conflictStyle 2>/dev/null)" = zdiff3 ] && ! git_version_ge 2 35; then
     bad "merge.conflictStyle is zdiff3, but git $(git --version | cut -d' ' -f3) needs 2.35 for it; run ./install.sh"

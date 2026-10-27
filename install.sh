@@ -27,6 +27,10 @@ Usage: ./install.sh [options]
                          ~/.config/dotfiles/local.conf. Not on Unraid.
       --no-interactive-zsh
                          Remove that setting again (back up first).
+      --repos            Projects layout and Git identities: create
+                         ~/projects/{personal,work,scratch} (never moves or
+                         clones), and include a per-scope identity file
+                         for repositories under personal/ and work/.
       --skip-validate    Do not run the validation step.
   -h, --help             Show this help.
 EOF
@@ -35,6 +39,7 @@ EOF
 ORIG_ARGS=("$@")
 NO_PACKAGES=0 RELEASE_BINARIES=0 WINDOWS_WEZTERM=0 UNRAID_OK=0 VALIDATE=1
 INTERACTIVE_ZSH="" # 1 = turn on, 0 = turn off, empty = leave as it is
+REPOS=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -n | --dry-run) DRY_RUN=1 ;;
@@ -45,6 +50,7 @@ while [ $# -gt 0 ]; do
     --unraid) UNRAID_OK=1 ;;
     --interactive-zsh) INTERACTIVE_ZSH=1 ;;
     --no-interactive-zsh) INTERACTIVE_ZSH=0 ;;
+    --repos) REPOS=1 ;;
     --skip-validate) VALIDATE=0 ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; die "unknown option: $1" ;;
@@ -218,6 +224,36 @@ ensure_gitinclude() {
   manifest_add gitinclude "$HOME/.gitconfig" "$1" "$backup"
 }
 
+# Add the global git value $2 to key $1 once (multi-valued, like
+# --add), with a backup and a manifest entry.
+ensure_gitconfig() {
+  local backup=""
+  if git config --global --get-all "$1" 2>/dev/null | grep -qxF "$2"; then
+    ok "git $1 = $2"
+    return 0
+  fi
+  [ -e "$HOME/.gitconfig" ] || GITCONFIG_CREATED=1
+  if [ -f "$HOME/.gitconfig" ] && [ -z "$GITCONFIG_CREATED" ]; then
+    backup=$(backup_path "$HOME/.gitconfig" copy) || die "cannot back up ~/.gitconfig"
+    change "back up $HOME/.gitconfig -> $backup"
+  fi
+  run git config --global --add "$1" "$2"
+  change "add $1 = $2 to ~/.gitconfig"
+  manifest_add gitconfig "$HOME/.gitconfig" "$1=$2" "$backup"
+}
+
+# Create directory $1 when it is missing (manifest: uninstall removes it
+# only while it is empty).
+ensure_dir() {
+  if [ -d "$1" ]; then
+    ok "$1"
+    return 0
+  fi
+  run mkdir -p "$1"
+  change "create directory $1"
+  manifest_add dir "$1" "" ""
+}
+
 if has git; then
   ensure_gitinclude "$C/git/config"
   # zdiff3 needs git 2.35; older git (Debian 11: 2.30.2) stops every
@@ -233,6 +269,52 @@ if has git; then
   fi
 else
   warn "git not found; git settings skipped"
+fi
+
+# Projects layout and Git identity separation (docs/repositories.md).
+if [ "$REPOS" = 1 ]; then
+  info "projects and git identities"
+  # shellcheck source=config/shell/local-conf.sh
+  . "$C/shell/local-conf.sh"
+  PROJECTS="$HOME/projects"
+  if _dotfiles_conf_get DOTFILES_PROJECTS; then PROJECTS=$_dotfiles_conf; fi
+  case $PROJECTS in "~"/*) PROJECTS="$HOME/${PROJECTS#\~/}" ;; esac
+  PROJECTS=${PROJECTS%/}
+  for d in "$PROJECTS" "$PROJECTS/personal" "$PROJECTS/work" "$PROJECTS/scratch"; do
+    ensure_dir "$d"
+  done
+  if has git; then
+    IDDIR="${XDG_CONFIG_HOME:-$HOME/.config}/git"
+    # Only identities from configuration; no guess from the host name.
+    if [ -z "$(git config --global --get user.useConfigOnly 2>/dev/null)" ]; then
+      ensure_gitconfig user.useConfigOnly true
+    elif [ "$(git config --global --get user.useConfigOnly)" != true ]; then
+      warn "user.useConfigOnly is set to $(git config --global --get user.useConfigOnly) in ~/.gitconfig; left unchanged"
+    fi
+    # Git matches gitdir: against the git directory and its physical path,
+    # but not against a resolved pattern. A worktree's git directory is a
+    # physical path, so a root behind a symlink needs both patterns.
+    PROJECTS_REAL=$( (cd "$PROJECTS" 2>/dev/null && pwd -P) || echo "$PROJECTS")
+    for scope in personal work; do
+      # The guard first, then the scope's own identity (later wins). The
+      # gitdir match also covers worktrees: their git directory is inside
+      # the main repository.
+      ensure_gitconfig "includeIf.gitdir:$PROJECTS/$scope/.path" "$C/git/identity-guard.config"
+      ensure_gitconfig "includeIf.gitdir:$PROJECTS/$scope/.path" "$IDDIR/identity-$scope"
+      if [ "$PROJECTS_REAL" != "$PROJECTS" ]; then
+        ensure_gitconfig "includeIf.gitdir:$PROJECTS_REAL/$scope/.path" "$C/git/identity-guard.config"
+        ensure_gitconfig "includeIf.gitdir:$PROJECTS_REAL/$scope/.path" "$IDDIR/identity-$scope"
+      fi
+      if [ -f "$IDDIR/identity-$scope" ]; then
+        ok "identity for $scope: $IDDIR/identity-$scope"
+      else
+        info "  no $scope identity yet; commits under $PROJECTS/$scope/ stop until you create it:"
+        echo "      mkdir -p $IDDIR"
+        echo "      git config --file $IDDIR/identity-$scope user.name \"Your Name\""
+        echo "      git config --file $IDDIR/identity-$scope user.email \"you@$scope.example\""
+      fi
+    done
+  fi
 fi
 
 if [ "$WINDOWS_WEZTERM" = 1 ]; then

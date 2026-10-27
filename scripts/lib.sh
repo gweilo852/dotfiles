@@ -197,7 +197,8 @@ bash_login_file() {
 # --------------------------------------------------------------------
 # Manifest: one TSV line per change, so uninstall touches only our files.
 #   kind  target  source  backup
-# kinds: link, block, gitinclude, copy
+# kinds: link, block, gitinclude, copy, gitconfig (source: key=value),
+# dir (a created directory; removed only while empty)
 # An empty backup field on a block or gitinclude means the file did not
 # exist before; uninstall then deletes it when nothing else is left in it.
 # --------------------------------------------------------------------
@@ -206,6 +207,24 @@ manifest_add() {
   [ "$DRY_RUN" = 1 ] && return 0
   mkdir -p "$STATE_DIR"
   printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-}" >>"$MANIFEST"
+}
+
+# Create the missing parent directories of $1, outermost first, and record
+# each in the manifest (uninstall removes them while they are empty).
+make_parents() {
+  local d=${1%/*} missing="" m
+  while [ -n "$d" ] && [ ! -d "$d" ]; do
+    missing="$d
+$missing"
+    d=${d%/*}
+  done
+  [ -n "$missing" ] || return 0
+  run mkdir -p "${1%/*}"
+  while IFS= read -r m; do
+    if [ -n "$m" ]; then manifest_add dir "$m" "" ""; fi
+  done <<PARENTS
+$missing
+PARENTS
 }
 
 # Back up a path. $2 = move (default) or copy. Prints the backup path.
@@ -248,7 +267,7 @@ link_file() {
     backup=$(backup_path "$target" move) || die "cannot back up $target"
     change "back up $target -> $backup"
   fi
-  run mkdir -p "$(dirname "$target")"
+  make_parents "$target"
   run ln -s "$src" "$target"
   change "link $target -> $src"
   # shellcheck disable=SC2034 # read by install.sh
@@ -286,8 +305,8 @@ ensure_block() {
     backup=$(backup_path "$file" copy) || die "cannot back up $file"
     change "back up $file -> $backup"
   fi
+  make_parents "$file"
   if [ "$DRY_RUN" != 1 ]; then
-    mkdir -p "$(dirname "$file")"
     printf '\n%s\n%s\n%s\n' "$(block_begin "$marker")" "$body" "$(block_end "$marker")" >>"$file"
   fi
   change "add $marker block to $file"

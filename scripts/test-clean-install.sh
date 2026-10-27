@@ -395,7 +395,7 @@ ww=$(find "$H" ! -type l -perm -002 | head -n 3)
 M="$H/.local/state/dotfiles/manifest.tsv"
 if [ -f "$M" ]; then
   pass "manifest written: ${M#"$T"/}"
-  bad=$(awk -F'\t' -v h="$H/" 'NF != 4 || $1 !~ /^(link|block|gitinclude|copy)$/ || index($2, h) != 1' "$M")
+  bad=$(awk -F'\t' -v h="$H/" 'NF != 4 || $1 !~ /^(link|block|gitinclude|copy|gitconfig|dir)$/ || index($2, h) != 1' "$M")
   [ -z "$bad" ] && pass "every manifest entry is well formed and inside the test home" || fail "manifest entries: $bad"
   dup=$(cut -f1,2,3 "$M" | sort | uniq -d)
   [ -z "$dup" ] && pass "no duplicate manifest entries" || fail "duplicate manifest entries: $dup"
@@ -635,6 +635,25 @@ local_untouched && pass "uninstall leaves local and unrelated files unchanged" |
 before=$(snapshot "$H")
 logged existing-uninstall2 "$H" ./uninstall.sh --yes && [ "$before" = "$(snapshot "$H")" ] &&
   pass "second uninstall changes nothing" || fail "second uninstall changed files"
+
+# --------------------------------------------------------------------
+section "projects layout and git identities (--repos)"
+H="$T/home-repos"
+mkdir -p "$H"
+TS=20000101-000020 logged repos-install "$H" ./install.sh --yes --no-packages --skip-validate --repos &&
+  pass "install.sh --repos exits 0" || { fail "install --repos"; show_log repos-install; }
+[ -d "$H/projects/personal" ] && [ -d "$H/projects/work" ] && [ -d "$H/projects/scratch" ] && pass "projects layout created" || fail "projects layout"
+if has git; then
+  n=$(sb "$H" git config --global --get-regexp '^includeif\.gitdir:' | wc -l | tr -d ' ')
+  [ "$n" -ge 4 ] && pass "$n scope includes in ~/.gitconfig" || fail "scope includes: $n"
+fi
+before=$(snapshot "$H")
+TS=20000101-000021 logged repos-install2 "$H" ./install.sh --yes --no-packages --skip-validate --repos
+grep -q 'done: 0 change' "$LOG/repos-install2.log" && [ "$before" = "$(snapshot "$H")" ] &&
+  pass "second install --repos: no changes" || fail "second --repos: $(grep 'done:' "$LOG/repos-install2.log")"
+logged repos-uninstall "$H" ./uninstall.sh --yes
+left=$(cd "$H" && find . -path ./.local -prune -o -path ./.cache -prune -o -path ./.zshrc.local -prune -o -mindepth 1 -print | LC_ALL=C sort | paste -sd' ' -)
+[ -z "$left" ] && pass "uninstall leaves no projects directories, git entries or blocks" || fail "left after uninstall: $left"
 
 # --------------------------------------------------------------------
 section "interactive zsh handoff: install"
