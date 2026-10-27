@@ -469,6 +469,21 @@ if has zsh; then
 fi
 
 # --------------------------------------------------------------------
+section "git with the installed configuration"
+if has git; then
+  # Real commits and a real conflict: git 2.30 (Debian 11) stopped every
+  # commit when the shared configuration set zdiff3.
+  mkdir -p "$T/gitwork"
+  out=$(sb "$H" sh -c 'cd "$1" && g() { git -c user.name=Test -c user.email=test@example.net "$@"; } &&
+    git init -q r && cd r && echo base >f && git add f && g commit -qm base &&
+    git checkout -qb side && echo theirs >f && g commit -qam side && git checkout -q - &&
+    echo ours >f && g commit -qam main && echo committed &&
+    { g merge side >/dev/null 2>&1; grep -c "^|||||||" f; }' sh "$T/gitwork" 2>&1 | paste -sd' ' -)
+  [ "$out" = "committed 1" ] && pass "git $(git --version | cut -d' ' -f3): commits and a conflicting merge work ($(sb "$H" git config --get merge.conflictStyle) markers)" ||
+    fail "git with the installed configuration: $out"
+fi
+
+# --------------------------------------------------------------------
 section "tmux (isolated socket under the test directory)"
 if has tmux; then
   pass "tmux $(tmux -V | cut -d' ' -f2)"

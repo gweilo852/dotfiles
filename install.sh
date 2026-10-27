@@ -199,18 +199,37 @@ DOTFILES_INTERACTIVE_ZSH=1"
     ;;
 esac
 
+# Add include.path $1 to ~/.gitconfig once (backup, manifest). A file that
+# this run created is not backed up again.
+GITCONFIG_CREATED=""
+ensure_gitinclude() {
+  local backup=""
+  if git config --global --get-all include.path 2>/dev/null | grep -qxF "$1"; then
+    ok "git include $1"
+    return 0
+  fi
+  [ -e "$HOME/.gitconfig" ] || GITCONFIG_CREATED=1
+  if [ -f "$HOME/.gitconfig" ] && [ -z "$GITCONFIG_CREATED" ]; then
+    backup=$(backup_path "$HOME/.gitconfig" copy) || die "cannot back up ~/.gitconfig"
+    change "back up $HOME/.gitconfig -> $backup"
+  fi
+  run git config --global --add include.path "$1"
+  change "add include.path $1 to ~/.gitconfig"
+  manifest_add gitinclude "$HOME/.gitconfig" "$1" "$backup"
+}
+
 if has git; then
-  if git config --global --get-all include.path 2>/dev/null | grep -qxF "$C/git/config"; then
-    ok "git include $C/git/config"
-  else
-    backup=""
-    if [ -f "$HOME/.gitconfig" ]; then
-      backup=$(backup_path "$HOME/.gitconfig" copy) || die "cannot back up ~/.gitconfig"
-      change "back up $HOME/.gitconfig -> $backup"
-    fi
-    run git config --global --add include.path "$C/git/config"
-    change "add include.path $C/git/config to ~/.gitconfig"
-    manifest_add gitinclude "$HOME/.gitconfig" "$C/git/config" "$backup"
+  ensure_gitinclude "$C/git/config"
+  # zdiff3 needs git 2.35; older git (Debian 11: 2.30.2) stops every
+  # command that reads it ("unknown style 'zdiff3'"). The shared file uses
+  # diff3; this include, after it, upgrades to zdiff3 where git allows.
+  if git_version_ge 2 35; then
+    ensure_gitinclude "$C/git/zdiff3.config"
+  elif git config --global --get-all include.path 2>/dev/null | grep -qxF "$C/git/zdiff3.config"; then
+    backup=$(backup_path "$HOME/.gitconfig" copy) || die "cannot back up ~/.gitconfig"
+    change "back up $HOME/.gitconfig -> $backup"
+    run git config --global --unset-all include.path "^$(printf '%s' "$C/git/zdiff3.config" | sed 's/[][\\.*^$/]/\\&/g')\$"
+    change "remove include.path $C/git/zdiff3.config (git $(git --version | cut -d' ' -f3) is older than 2.35)"
   fi
 else
   warn "git not found; git settings skipped"

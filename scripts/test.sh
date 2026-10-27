@@ -504,6 +504,38 @@ fi
 [ -d "$B" ] && pass "uninstall keeps backups" || fail "backups removed"
 
 # --------------------------------------------------------------------
+section "git versions (zdiff3 needs git 2.35)"
+if has git; then
+  ! grep -qE '^[^#]*zdiff3' config/git/config && pass "shared git config has no zdiff3 (git 2.30 stops on it)" ||
+    fail "config/git/config sets zdiff3"
+  # A git that reports 2.30.2 and passes everything else to the real git.
+  mkdir -p "$TMP/oldgit"
+  printf '#!/bin/sh\n[ "$1" = --version ] && { echo "git version 2.30.2"; exit 0; }\nexec "%s" "$@"\n' "$(command -v git)" >"$TMP/oldgit/git"
+  chmod +x "$TMP/oldgit/git"
+  H="$TMP/git-home"
+  mkdir -p "$H"
+  zinc() { HOME="$H" git config --global --get-all include.path 2>/dev/null | grep -cxF "$ROOT/config/git/zdiff3.config"; }
+  TS=20000101-000030 PATH="$TMP/oldgit:$PATH" sandbox ./install.sh --yes --no-packages --skip-validate >"$TMP/g1.out" 2>&1
+  [ "$(zinc)" = 0 ] && pass "git 2.30: no zdiff3 include" || fail "git 2.30: zdiff3 include added"
+  if git_version_ge 2 35; then
+    TS=20000101-000031 sandbox ./install.sh --yes --no-packages --skip-validate >"$TMP/g2.out" 2>&1
+    [ "$(zinc)" = 1 ] && [ "$(HOME="$H" git config --get merge.conflictStyle)" = zdiff3 ] &&
+      pass "git $(git --version | cut -d' ' -f3): zdiff3 include added after the shared config" || fail "modern git: zdiff3 include"
+    out=$(PATH="$TMP/oldgit:$PATH" sandbox bash scripts/doctor.sh --quick 2>&1)
+    printf '%s' "$out" | grep -q 'needs 2.35' && pass "doctor fails zdiff3 with an old git" || fail "doctor missed zdiff3 on old git"
+    TS=20000101-000032 PATH="$TMP/oldgit:$PATH" sandbox ./install.sh --yes --no-packages --skip-validate >"$TMP/g3.out" 2>&1
+    [ "$(zinc)" = 0 ] && [ "$(HOME="$H" git config --get merge.conflictStyle)" = diff3 ] &&
+      [ -f "$H/.dotfiles-backups/20000101-000032/.gitconfig" ] &&
+      pass "after a downgrade to git 2.30, install removes the zdiff3 include (backup first)" || fail "downgrade: zdiff3 include kept"
+  else
+    skip "git $(git --version | cut -d' ' -f3) is older than 2.35: zdiff3 include checks"
+  fi
+  sandbox ./uninstall.sh --yes >/dev/null 2>&1
+  [ -z "$(HOME="$H" git config --global --get-all include.path 2>/dev/null)" ] && pass "uninstall removes both git includes" ||
+    fail "git includes left: $(HOME="$H" git config --global --get-all include.path)"
+fi
+
+# --------------------------------------------------------------------
 section "Linux VDI simulation"
 # A Linux host with existing work settings, no root and no desktop.
 H="$TMP/vdi-home"

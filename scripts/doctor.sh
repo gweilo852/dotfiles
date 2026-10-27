@@ -77,6 +77,10 @@ if has git; then
   else
     warn "git include missing"
   fi
+  # zdiff3 stops git older than 2.35 on every commit and merge.
+  if [ "$(git config --get merge.conflictStyle 2>/dev/null)" = zdiff3 ] && ! git_version_ge 2 35; then
+    bad "merge.conflictStyle is zdiff3, but git $(git --version | cut -d' ' -f3) needs 2.35 for it; run ./install.sh"
+  fi
 fi
 
 # --------------------------------------------------------------------

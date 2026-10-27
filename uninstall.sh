@@ -165,6 +165,7 @@ else
   done
   undo_block "$LOCAL_CONF" interactive-zsh
   undo_block "$HOME/.zshenv" zshenv
+  undo_gitinclude "$DOTFILES_DIR/config/git/zdiff3.config"
   undo_gitinclude "$DOTFILES_DIR/config/git/config"
 fi
 

@@ -24,7 +24,9 @@
 	line-numbers-zero-style = "#5b6078"
 
 [merge]
-	conflictStyle = zdiff3
+	# diff3 works with every git; zdiff3 needs git 2.35, and older git stops
+	# on it. install.sh adds zdiff3.config where git supports it.
+	conflictStyle = diff3
 
 [diff]
 	colorMoved = default

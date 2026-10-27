@@ -98,6 +98,15 @@ confirm() { # $1 = question. Returns 0 for yes.
   case "$reply" in [Yy] | [Yy][Ee][Ss]) return 0 ;; *) return 1 ;; esac
 }
 
+# True when git is at least version $1.$2 (for example: git_version_ge 2 35).
+git_version_ge() {
+  local v major minor
+  v=$(git --version 2>/dev/null | sed -n 's/^git version \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')
+  [ -n "$v" ] || return 1
+  major=${v% *} minor=${v#* }
+  [ "$major" -gt "$1" ] || { [ "$major" -eq "$1" ] && [ "$minor" -ge "$2" ]; }
+}
+
 # --------------------------------------------------------------------
 # Platform detection
 # --------------------------------------------------------------------
@@ -207,6 +216,13 @@ backup_path() {
     *) rel=${target#/} ;;
   esac
   dest="$BACKUP_DIR/$rel"
+  # A second change to the same file in one run keeps the first backup,
+  # which holds the original.
+  if [ -e "$dest" ] || [ -L "$dest" ]; then
+    [ "$mode" = copy ] || rm -rf "$target" || return 1
+    echo "$dest"
+    return 0
+  fi
   if [ "$DRY_RUN" != 1 ]; then
     mkdir -p "$(dirname "$dest")" || return 1
     chmod 700 "$BACKUP_ROOT" 2>/dev/null
