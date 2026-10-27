@@ -198,7 +198,8 @@ bash_login_file() {
 # Manifest: one TSV line per change, so uninstall touches only our files.
 #   kind  target  source  backup
 # kinds: link, block, gitinclude, copy, gitconfig (source: key=value),
-# dir (a created directory; removed only while empty)
+# dir (a created directory; removed only while empty), generated (a file
+# that a dotfiles script writes; removed while it keeps its marker line)
 # An empty backup field on a block or gitinclude means the file did not
 # exist before; uninstall then deletes it when nothing else is left in it.
 # --------------------------------------------------------------------
@@ -291,8 +292,20 @@ copy_file() {
   manifest_add copy "$target" "$src" "$backup"
 }
 
-block_begin() { printf '# >>> dotfiles (%s) >>>' "$1"; }
-block_end() { printf '# <<< dotfiles (%s) <<<' "$1"; }
+# Markers end in "-md" for Markdown files: an HTML comment, because a line
+# that starts with "#" would be a heading in instructions for AI agents.
+block_begin() {
+  case $1 in
+    *-md) printf '<!-- >>> dotfiles (%s) >>> -->' "$1" ;;
+    *) printf '# >>> dotfiles (%s) >>>' "$1" ;;
+  esac
+}
+block_end() {
+  case $1 in
+    *-md) printf '<!-- <<< dotfiles (%s) <<< -->' "$1" ;;
+    *) printf '# <<< dotfiles (%s) <<<' "$1" ;;
+  esac
+}
 
 # Append a marked block to $1 once. $2 = marker name, $3 = block body.
 ensure_block() {

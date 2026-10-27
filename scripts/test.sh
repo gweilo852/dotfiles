@@ -666,6 +666,59 @@ if has git; then
 fi
 
 # --------------------------------------------------------------------
+section "AI instructions (--ai)"
+# Providers are "present" through their configuration directories; no
+# provider needs to be installed.
+H="$TMP/ai-home"
+mkdir -p "$H/.claude" "$H/.gemini" "$H/.codex" "$H/.config/ai/scopes"
+printf '# My rules\n- keep me\n' >"$H/.claude/CLAUDE.md"
+cp "$H/.claude/CLAUDE.md" "$TMP/ai.claude"
+printf 'Use the synthetic work tracker.\n' >"$H/.config/ai/scopes/work.md"
+TS=20000101-000050 sandbox ./install.sh --yes --no-packages --skip-validate --ai >"$TMP/a1.out" 2>&1 || fail "install --ai: $(tail -n 3 "$TMP/a1.out")"
+AO="$H/.local/state/dotfiles/ai"
+[ -f "$H/.config/ai/AGENTS.md" ] && pass "--ai creates ~/.config/ai/AGENTS.md from the example" || fail "no local AGENTS.md"
+head -n 2 "$H/.claude/CLAUDE.md" | cmp -s - "$TMP/ai.claude" && [ "$(grep -c '>>> dotfiles (ai-md)' "$H/.claude/CLAUDE.md")" = 1 ] &&
+  pass "Claude: existing CLAUDE.md kept, one import block added" || fail "Claude CLAUDE.md"
+missing=""
+for f in "$H/.claude/CLAUDE.md" "$H/.gemini/GEMINI.md"; do
+  while IFS= read -r imp; do [ -f "$imp" ] || missing="$missing $imp"; done < <(sed -n 's/^@//p' "$f" 2>/dev/null)
+done
+[ -z "$missing" ] && [ "$(grep -c '^@' "$H/.gemini/GEMINI.md")" = 4 ] && pass "Claude and Gemini import 4 files, all present" || fail "missing imports:$missing"
+! grep -l '^# >>>' "$H/.claude/CLAUDE.md" "$H/.gemini/GEMINI.md" >/dev/null 2>&1 && pass "Markdown files use HTML-comment markers, not headings" || fail "heading markers in Markdown"
+[ "$(readlink "$H/.codex/AGENTS.md")" = "$AO/AGENTS.md" ] && pass "Codex: ~/.codex/AGENTS.md links to the generated bundle" || fail "Codex link: $(readlink "$H/.codex/AGENTS.md")"
+grep -q '^# Shared instructions for coding agents' "$AO/AGENTS.md" && grep -q '^## Work scope' "$AO/AGENTS.md" &&
+  grep -q 'Use the synthetic work tracker.' "$AO/AGENTS.md" && ! grep -q '^## Personal scope' "$AO/AGENTS.md" &&
+  pass "bundle: shared text, then the work scope under its heading (no empty personal scope)" || fail "bundle content"
+grep -q "^@$H/.config/ai/scopes/work.md" "$AO/scope-work.md" && grep -q 'No personal instructions' "$AO/scope-personal.md" &&
+  pass "scope wrappers import the scope file, or say it does not exist" || fail "scope wrappers"
+before=$(snapshot)
+TS=20000101-000051 sandbox ./install.sh --yes --no-packages --skip-validate --ai >"$TMP/a2.out" 2>&1
+grep -q 'done: 0 change' "$TMP/a2.out" && [ "$before" = "$(snapshot)" ] && pass "second install --ai: no changes" ||
+  fail "second --ai: $(grep -E 'done:|would|write|update' "$TMP/a2.out" | head -n 3)"
+printf 'Synthetic local rule X.\n' >>"$H/.config/ai/AGENTS.md"
+sandbox ./scripts/ai-sync.sh --check >/dev/null 2>&1 && fail "ai-sync --check missed a stale bundle" || pass "ai-sync --check reports a stale bundle"
+out=$(sandbox bash scripts/doctor.sh --quick 2>&1)
+printf '%s' "$out" | grep -q 'stale' && pass "doctor warns about stale AI files" || fail "doctor stale AI"
+sandbox ./scripts/ai-sync.sh >/dev/null 2>&1
+grep -q 'Synthetic local rule X.' "$AO/AGENTS.md" && sandbox ./scripts/ai-sync.sh --check >/dev/null 2>&1 &&
+  pass "ai-sync updates the bundle" || fail "ai-sync update"
+sandbox ./uninstall.sh --yes >"$TMP/a3.out" 2>&1
+cmp -s "$H/.claude/CLAUDE.md" "$TMP/ai.claude" && pass "uninstall restores CLAUDE.md exactly" || fail "CLAUDE.md after uninstall"
+[ ! -e "$H/.gemini/GEMINI.md" ] && [ ! -e "$H/.codex/AGENTS.md" ] && [ ! -e "$AO/AGENTS.md" ] && [ ! -e "$AO/scope-work.md" ] &&
+  pass "uninstall removes GEMINI.md it created, the Codex link and the generated files" || fail "AI files left: $(ls "$H/.gemini" "$H/.codex" "$AO" 2>/dev/null | paste -sd' ' -)"
+[ -f "$H/.config/ai/AGENTS.md" ] && [ -f "$H/.config/ai/scopes/work.md" ] && pass "uninstall keeps your AI instruction files" || fail "AI sources removed"
+# An existing global Codex file is the user's: not replaced.
+H="$TMP/ai-home2"
+mkdir -p "$H/.codex"
+printf 'my codex rules\n' >"$H/.codex/AGENTS.md"
+TS=20000101-000052 sandbox ./install.sh --yes --no-packages --skip-validate --ai >"$TMP/a4.out" 2>&1
+[ "$(cat "$H/.codex/AGENTS.md")" = "my codex rules" ] && [ ! -L "$H/.codex/AGENTS.md" ] && grep -q 'is yours; not changed' "$TMP/a4.out" &&
+  pass "Codex: an existing ~/.codex/AGENTS.md is kept, with a note" || fail "Codex existing file"
+if ! has gemini; then
+  [ ! -e "$H/.gemini" ] && pass "no Gemini adapter without Gemini CLI or ~/.gemini" || fail "~/.gemini created without Gemini"
+fi
+
+# --------------------------------------------------------------------
 section "Linux VDI simulation"
 # A Linux host with existing work settings, no root and no desktop.
 H="$TMP/vdi-home"

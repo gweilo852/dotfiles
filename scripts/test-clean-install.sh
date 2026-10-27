@@ -656,6 +656,23 @@ left=$(cd "$H" && find . -path ./.local -prune -o -path ./.cache -prune -o -path
 [ -z "$left" ] && pass "uninstall leaves no projects directories, git entries or blocks" || fail "left after uninstall: $left"
 
 # --------------------------------------------------------------------
+section "AI instructions (--ai)"
+H="$T/home-ai"
+mkdir -p "$H/.claude" "$H/.codex"
+printf '# synthetic user rules\n' >"$H/.claude/CLAUDE.md"
+cp "$H/.claude/CLAUDE.md" "$T/ai.claude"
+TS=20000101-000022 logged ai-install "$H" ./install.sh --yes --no-packages --skip-validate --ai &&
+  pass "install.sh --ai exits 0" || { fail "install --ai"; show_log ai-install; }
+grep -q '>>> dotfiles (ai-md)' "$H/.claude/CLAUDE.md" && [ -L "$H/.codex/AGENTS.md" ] && pass "Claude block and Codex link in the test home" || fail "AI adapters"
+before=$(snapshot "$H")
+TS=20000101-000023 logged ai-install2 "$H" ./install.sh --yes --no-packages --skip-validate --ai
+grep -q 'done: 0 change' "$LOG/ai-install2.log" && [ "$before" = "$(snapshot "$H")" ] && pass "second install --ai: no changes" ||
+  fail "second --ai: $(grep 'done:' "$LOG/ai-install2.log")"
+logged ai-uninstall "$H" ./uninstall.sh --yes
+cmp -s "$H/.claude/CLAUDE.md" "$T/ai.claude" && [ ! -e "$H/.codex/AGENTS.md" ] && pass "uninstall restores CLAUDE.md and removes the Codex link" ||
+  fail "AI uninstall"
+
+# --------------------------------------------------------------------
 section "interactive zsh handoff: install"
 H="$T/home-zsh"
 mkdir -p "$H"

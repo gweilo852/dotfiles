@@ -191,6 +191,22 @@ else
 fi
 
 # --------------------------------------------------------------------
+AI_OUT="$STATE_DIR/ai"
+if [ -d "$AI_OUT" ]; then
+  info "AI instructions"
+  for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md" "$HOME/.gemini/GEMINI.md"; do
+    grep -qF "$(block_begin ai-md)" "$f" 2>/dev/null && ok "$f imports the shared and local instructions"
+  done
+  cx="${CODEX_HOME:-$HOME/.codex}/AGENTS.md"
+  [ -L "$cx" ] && [ "$(readlink "$cx")" = "$AI_OUT/AGENTS.md" ] && ok "$cx links to the generated bundle"
+  if "$DOTFILES_DIR/scripts/ai-sync.sh" --check >/dev/null 2>&1; then
+    ok "generated AI files are current"
+  else
+    warn "generated AI files are stale (Codex sees old text): run scripts/ai-sync.sh"
+  fi
+fi
+
+# --------------------------------------------------------------------
 if has zsh && [ -L "$HOME/.zshrc" ]; then
   info "interactive zsh"
   # no_tty: an interactive shell must not take over this terminal.

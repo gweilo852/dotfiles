@@ -31,6 +31,9 @@ Usage: ./install.sh [options]
                          ~/projects/{personal,work,scratch} (never moves or
                          clones), and include a per-scope identity file
                          for repositories under personal/ and work/.
+      --ai               Shared and local instructions for coding agents:
+                         adapters for Claude Code, Codex and Gemini CLI
+                         (only those present). Never installs a provider.
       --skip-validate    Do not run the validation step.
   -h, --help             Show this help.
 EOF
@@ -39,7 +42,7 @@ EOF
 ORIG_ARGS=("$@")
 NO_PACKAGES=0 RELEASE_BINARIES=0 WINDOWS_WEZTERM=0 UNRAID_OK=0 VALIDATE=1
 INTERACTIVE_ZSH="" # 1 = turn on, 0 = turn off, empty = leave as it is
-REPOS=0
+REPOS=0 AI=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -n | --dry-run) DRY_RUN=1 ;;
@@ -51,6 +54,7 @@ while [ $# -gt 0 ]; do
     --interactive-zsh) INTERACTIVE_ZSH=1 ;;
     --no-interactive-zsh) INTERACTIVE_ZSH=0 ;;
     --repos) REPOS=1 ;;
+    --ai) AI=1 ;;
     --skip-validate) VALIDATE=0 ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; die "unknown option: $1" ;;
@@ -314,6 +318,60 @@ if [ "$REPOS" = 1 ]; then
         echo "      git config --file $IDDIR/identity-$scope user.email \"you@$scope.example\""
       fi
     done
+  fi
+fi
+
+# Instructions for coding agents (docs/ai.md). AGENTS.md is the canonical
+# format; each provider gets an adapter in the form it reads.
+if [ "$AI" = 1 ]; then
+  info "AI instructions"
+  AI_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/ai"
+  AI_OUT="$STATE_DIR/ai"
+  if [ -e "$AI_HOME/AGENTS.md" ]; then
+    ok "$AI_HOME/AGENTS.md (yours; not changed)"
+  else
+    make_parents "$AI_HOME/AGENTS.md"
+    run cp "$C/ai/AGENTS.local.example.md" "$AI_HOME/AGENTS.md"
+    change "create $AI_HOME/AGENTS.md from the example (yours from now on)"
+  fi
+  new_generated=""
+  for f in scope-personal.md scope-work.md AGENTS.md; do
+    [ -e "$AI_OUT/$f" ] || new_generated="$new_generated $f"
+  done
+  DRY_RUN=$DRY_RUN "$DOTFILES_DIR/scripts/ai-sync.sh" || warn "scripts/ai-sync.sh failed"
+  for f in $new_generated; do
+    [ -e "$AI_OUT/$f" ] && manifest_add generated "$AI_OUT/$f" "" ""
+  done
+  # Claude Code and Gemini CLI: imports, so they always read the sources.
+  ai_block="<!-- Shared and local instructions for coding agents (dotfiles: docs/ai.md). -->
+@$C/ai/AGENTS.md
+@$AI_HOME/AGENTS.md
+@$AI_OUT/scope-personal.md
+@$AI_OUT/scope-work.md"
+  CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  if has claude || [ -d "$CLAUDE_DIR" ]; then
+    ensure_block "$CLAUDE_DIR/CLAUDE.md" ai-md "$ai_block"
+  else
+    info "  Claude Code not found: skipped (run install.sh --ai again after you install it)"
+  fi
+  if has gemini || [ -d "$HOME/.gemini" ]; then
+    ensure_block "$HOME/.gemini/GEMINI.md" ai-md "$ai_block"
+  else
+    info "  Gemini CLI not found: skipped"
+  fi
+  # Codex: no imports, so a link to the generated bundle. An existing
+  # global AGENTS.md is yours and is not replaced.
+  CODEX_DIR="${CODEX_HOME:-$HOME/.codex}"
+  if has codex || [ -d "$CODEX_DIR" ]; then
+    if [ -L "$CODEX_DIR/AGENTS.md" ] && [ "$(readlink "$CODEX_DIR/AGENTS.md")" = "$AI_OUT/AGENTS.md" ]; then
+      ok "$CODEX_DIR/AGENTS.md"
+    elif [ -e "$CODEX_DIR/AGENTS.md" ] || [ -L "$CODEX_DIR/AGENTS.md" ]; then
+      warn "$CODEX_DIR/AGENTS.md is yours; not changed. To use the shared instructions, move its text to $AI_HOME/AGENTS.md and remove it, then run install.sh --ai again"
+    else
+      link_file "$AI_OUT/AGENTS.md" "$CODEX_DIR/AGENTS.md"
+    fi
+  else
+    info "  Codex not found: skipped"
   fi
 fi
 
