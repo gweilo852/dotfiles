@@ -495,7 +495,13 @@ directory that carries this run's marker.
 only `$HOME`, which the test checks. Real packages, real SSH logins and the
 system login shell are not exercised; `docs/vdi.md` lists the manual checks.
 Pseudo-terminal checks need `python3`, and zsh, tmux or Starship checks are
-skipped when the tool is missing.
+skipped when the tool is missing. On a hardened host, `/tmp` may be
+`noexec`; the suites then use the first temporary directory where a probe
+file runs (`DOTFILES_TEST_TMPDIR` chooses one). An endpoint-security agent
+may kill interactive shells on a pseudo-terminal; such a FAIL says "killed
+from outside the harness", and `scripts/diagnose-test-env.sh` (read-only)
+collects the evidence. See
+[docs/troubleshooting.md](docs/troubleshooting.md).
 
 CI (`.github/workflows/test.yml`) runs both suites on Ubuntu, macOS and
 Debian 11, without secrets or root.
@@ -531,7 +537,8 @@ dotfiles/
 │   ├── install-release-binaries.sh  pinned, verified release archives
 │   ├── doctor.sh                  health check of an installed machine
 │   ├── test.sh                    automated validation
-│   └── test-clean-install.sh      end-to-end install test in a temporary home
+│   ├── test-clean-install.sh      end-to-end install test in a temporary home
+│   └── diagnose-test-env.sh       read-only evidence for test failures on a hardened host
 ├── config/
 │   ├── wezterm/                   wezterm.lua and a local override example
 │   ├── starship/starship.toml     prompt and Kubernetes rules

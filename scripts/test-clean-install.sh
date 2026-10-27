@@ -58,9 +58,16 @@ check() { # description, command...: PASS when the command succeeds
 # --------------------------------------------------------------------
 
 MARK=.dotfiles-clean-install-test
-# Under /tmp, not $TMPDIR: tmux socket paths must stay short (macOS allows
-# 104 bytes, and $TMPDIR there is deep under /var/folders).
-T=$(mktemp -d /tmp/dotfiles-clean-install.XXXXXX) || { echo "mktemp -d failed" >&2; exit 1; }
+# A base directory where files can be executed (hardened hosts mount /tmp
+# noexec, and the stubs and test scripts must run) with a short path (tmux
+# socket paths: macOS allows 104 bytes, and $TMPDIR there is deep under
+# /var/folders). DOTFILES_TEST_TMPDIR selects one explicitly.
+BASE=$(exec_tmpdir 40) || {
+  echo "no temporary directory allows executing files (tried \$DOTFILES_TEST_TMPDIR, \$TMPDIR, /tmp, /var/tmp, \$XDG_RUNTIME_DIR)." >&2
+  echo "Set DOTFILES_TEST_TMPDIR to a short, writable directory on a filesystem without noexec." >&2
+  exit 2
+}
+T=$(mktemp -d "$BASE/dotfiles-clean-install.XXXXXX") || { echo "mktemp -d failed in $BASE" >&2; exit 1; }
 T=$(cd -P "$T" && pwd)
 TOKEN="$$.$RANDOM.$(date +%s)"
 printf '%s\n' "$TOKEN" >"$T/$MARK"
@@ -192,11 +199,44 @@ pty() {
     case "$rest" in *";;"*) rest=${rest#*;;} ;; *) rest="" ;; esac
   done
   sb "$home" "$PY" -I "$ROOT/tests/pty-run.py" --timeout 40 ${args[@]+"${args[@]}"} -- env "$@" >"$LOG/$name.log" 2>&1
+  echo "$?" >"$LOG/$name.rc"
   tr -d '\r' <"$LOG/$name.log" >"$LOG/$name.txt"
   if [ "$VERBOSE" = 1 ]; then
     printf '  ---- pty %s\n' "$name"
     sed 's/^/  | /' "$LOG/$name.txt"
   fi
+}
+# Why a PTY run ended: the runner's status line (exit code or signal of the
+# command, elapsed time, lines typed), or, without one, how the runner
+# itself died. A runner killed by a signal without a status line was killed
+# from outside this harness: the harness kills only on timeout, and then
+# prints a status line.
+EXTERNAL_KILLS=0 COUNTED=" "
+pty_diag() { # pty name
+  local rc status
+  rc=$(cat "$LOG/$1.rc" 2>/dev/null || echo '?')
+  status=$(grep -a 'pty-run: status' "$LOG/$1.txt" 2>/dev/null | tail -n 1)
+  if [ -n "$status" ]; then
+    echo "[${status#pty-run: status }; runner exit $rc]"
+  elif [ "$rc" -gt 128 ] 2>/dev/null; then
+    echo "[runner killed by signal $((rc - 128)) ($(kill -l $((rc - 128)) 2>/dev/null)) from outside the harness; no status line, so not a timeout]"
+  else
+    echo "[runner exit $rc, no status line]"
+  fi
+}
+count_external() { # pty name; each run counts once
+  local rc
+  case "$COUNTED" in *" $1 "*) return 0 ;; esac
+  COUNTED="$COUNTED$1 "
+  rc=$(cat "$LOG/$1.rc" 2>/dev/null || echo 0)
+  if [ "$rc" -gt 128 ] 2>/dev/null && ! grep -qa 'pty-run: status' "$LOG/$1.txt" 2>/dev/null; then
+    EXTERNAL_KILLS=$((EXTERNAL_KILLS + 1))
+  fi
+}
+pty_fail() { # description, pty name
+  fail "$1 $(pty_diag "$2")"
+  count_external "$2"
+  grep -av 'pty-run: status' "$LOG/$2.txt" | tail -n 6 | sed 's/^/        | /'
 }
 expect_result() { # description, pty name, expected results (space separated)
   local got
@@ -204,8 +244,7 @@ expect_result() { # description, pty name, expected results (space separated)
   if [ "$got" = "$3" ]; then
     pass "$1"
   else
-    fail "$1: want '$3', got '$got'"
-    tail -n 6 "$LOG/$2.txt" | sed 's/^/        | /'
+    pty_fail "$1: want '$3', got '$got'" "$2"
   fi
 }
 
@@ -249,6 +288,8 @@ expected_platform() {
 PLATFORM=$(expected_platform)
 
 printf 'dotfiles clean-install test\n  repository: %s\n  test dir:   %s\n  platform:   %s\n' "$ROOT" "$T" "$PLATFORM"
+if has findmnt; then printf '  test fs:    %s\n' "$(findmnt -no TARGET,OPTIONS -T "$T" 2>/dev/null | tr -s ' ')"; fi
+[ "$BASE" = /tmp ] || [ ! -d /tmp ] || printf '  note:       /tmp not used (noexec, or path too long); base %s\n' "$BASE"
 printf '  tools:      zsh=%s tmux=%s starship=%s git=%s python3=%s\n' \
   "$(has zsh && echo yes || echo no)" "$(has tmux && tmux -V | cut -d' ' -f2 || echo no)" \
   "$(has starship && echo yes || echo no)" "$(has git && echo yes || echo no)" "$([ -n "$PY" ] && echo yes || echo no)"
@@ -260,7 +301,13 @@ fi
 # --------------------------------------------------------------------
 section "isolation"
 case "$T/" in
-  "$REAL_HOME"/*) fail "test directory is inside the real home: $T" ;;
+  "$REAL_HOME"/*)
+    if [ -n "${DOTFILES_TEST_TMPDIR:-}" ]; then
+      skip "test directory is inside the real home, as DOTFILES_TEST_TMPDIR requests: $T"
+    else
+      fail "test directory is inside the real home: $T"
+    fi
+    ;;
   *) pass "test directory is outside the real home" ;;
 esac
 hits=$(grep -nE 'getent|getpwnam|getpwuid|dscl|~[A-Za-z_]' install.sh uninstall.sh scripts/lib.sh \
@@ -280,8 +327,11 @@ if has git; then
   [ -f "$H/.gitconfig" ] && pass "git --global writes the test home" || fail "git --global wrote elsewhere"
   rm -f "$H/.gitconfig"
 fi
-out=$(sb "$H" sudo true 2>&1)
-case "$out" in *blocked*) pass "sudo is blocked in the test environment" ;; *) fail "sudo not blocked: $out" ;; esac
+out=$(sb "$H" sudo true 2>&1; echo "exit=$?")
+case "$out" in
+  *blocked*"exit=97") pass "sudo is blocked in the test environment" ;;
+  *) fail "sudo stub did not run: $(printf '%s' "$out" | tr '\n' ' ')" ;;
+esac
 : >"$T/blocked.log"
 
 # --------------------------------------------------------------------
@@ -622,7 +672,7 @@ else
   expect_result "non-login interactive bash hands off to zsh" nonlogin "R:zsh:42:zsh:1:keep:"
   pty parent "$H" 'echo "PP:$(ps -o comm= -p $PPID | sed "s,.*/,,"):$((7*6))";;exit' bash -l
   pp=$(grep -o 'PP:[^:]*:42' "$LOG/parent.txt" | tail -n 1)
-  case "$pp" in PP:*sh:42 | PP::42) fail "a shell stays behind zsh ($pp)" ;; PP:*) pass "bash is replaced (exec), not nested ($pp)" ;; *) fail "parent probe: no output" ;; esac
+  case "$pp" in PP:*sh:42 | PP::42) fail "a shell stays behind zsh ($pp)" ;; PP:*) pass "bash is replaced (exec), not nested ($pp)" ;; *) pty_fail "parent probe: no output" parent ;; esac
   pty escape "$H" "$PROBE;;exit" DOTFILES_NO_ZSH=1 bash -i
   expect_result "escape: DOTFILES_NO_ZSH=1 bash -i stays bash" escape "R:bash:42:bash::keep:"
   pty dashc "$H" "" bash -i -c "$PROBE"
@@ -633,14 +683,15 @@ else
   expect_result "TERM=dumb (editor shells) stays bash" dumb "R:bash:42:bash::keep:"
   pty nozsh "$H" "$PROBE;;exit" PATH="$BIN_MIN" HOMEBREW_PREFIX=/nonexistent bash -i
   expect_result "zsh missing from PATH: bash stays, no error" nozsh "R:bash:42:bash::keep:"
-  ! grep -qiE 'cannot start|not found|error' "$LOG/nozsh.txt" && pass "no error text when zsh is missing" ||
-    fail "error text with zsh missing: $(grep -iE 'cannot start|not found|error' "$LOG/nozsh.txt" | head -n 2)"
+  # Only meaningful with a transcript: an empty one (runner killed) is no pass.
+  [ -n "$(results nozsh)" ] && ! grep -qiE 'cannot start|not found|error' "$LOG/nozsh.txt" && pass "no error text when zsh is missing" ||
+    pty_fail "error text with zsh missing, or no transcript: $(grep -iE 'cannot start|not found|error' "$LOG/nozsh.txt" | head -n 2)" nozsh
   pty badzsh "$H" "$PROBE;;exit" DOTFILES_ZSH=/nonexistent/zsh bash -l
   expect_result "DOTFILES_ZSH points to a missing file: bash stays" badzsh "R:bash:42:bash::keep:profile"
   pty nostarship "$H" "$PROBE;;exit" PATH="$BIN_ZSH" HOMEBREW_PREFIX=/nonexistent bash -i
   expect_result "starship missing: zsh still starts with the plain prompt" nostarship "R:zsh:42:zsh:1:keep:"
-  ! grep -qE 'command not found|no such file' "$LOG/nostarship.txt" && pass "no errors without starship" ||
-    fail "errors without starship: $(grep -E 'command not found|no such file' "$LOG/nostarship.txt" | head -n 2)"
+  [ -n "$(results nostarship)" ] && ! grep -qE 'command not found|no such file' "$LOG/nostarship.txt" && pass "no errors without starship" ||
+    pty_fail "errors without starship, or no transcript: $(grep -E 'command not found|no such file' "$LOG/nostarship.txt" | head -n 2)" nostarship
   pty nested "$H" "$PROBE;;bash -i;;$PROBE;;exit;;$PROBE;;exit" bash -l
   expect_result "bash started from the zsh stays bash (no loop); exit returns to zsh" nested \
     "R:zsh:42:zsh:1:keep:profile R:bash:42:bash:1:keep:profile R:zsh:42:zsh:1:keep:profile"
@@ -649,13 +700,13 @@ else
   chmod +x "$H/script.sh" "$H/posix.sh"
   pty scripts "$H" '~/script.sh;;~/posix.sh;;exit' bash -l
   grep -qx 'S:bash:2' "$LOG/scripts.txt" && grep -qx 'P:posix:5' "$LOG/scripts.txt" &&
-    pass "scripts started from the zsh use their own interpreters" || fail "script interpreters"
+    pass "scripts started from the zsh use their own interpreters" || pty_fail "script interpreters" scripts
   if has starship; then
     # Non-login: on Debian /etc/profile resets PATH, which can drop the
     # starship in ~/.local/bin of the real home.
     pty reinit "$H" 'source ~/.zshrc;;echo "N:$(print -l $precmd_functions | grep -c starship_precmd):$((1+1))";;exit' bash -i
     grep -qx 'N:1:2' "$LOG/reinit.txt" && pass "sourcing ~/.zshrc again in the handed-off zsh keeps one prompt hook" ||
-      fail "zsh re-init: $(grep -o 'N:[0-9]*:2' "$LOG/reinit.txt")"
+      pty_fail "zsh re-init: '$(grep -o 'N:[0-9]*:2' "$LOG/reinit.txt")'" reinit
   fi
 fi
 
@@ -739,5 +790,11 @@ section "nothing outside the test directory changed"
 stray=$(ls -d "/tmp/tmux-$(id -u)/clean" "/tmp/tmux-$(id -u)/zclean" 2>/dev/null || true)
 [ -z "$stray" ] && pass "no test socket in the default tmux directory" || fail "test sockets outside the test directory: $stray"
 
+if [ "$EXTERNAL_KILLS" -gt 0 ]; then
+  printf '\n%d pseudo-terminal check(s) failed because something outside this harness\n' "$EXTERNAL_KILLS"
+  printf 'killed the runner (the kernel OOM killer, a resource limit, or another process\n'
+  printf 'such as an endpoint-security agent). These are not test timeouts. To collect\n'
+  printf 'evidence: scripts/diagnose-test-env.sh (read-only; see docs/troubleshooting.md).\n'
+fi
 printf '\n%d PASS, %d FAIL, %d SKIP\n' "$PASS" "$FAIL" "$SKIP"
 [ "$FAIL" = 0 ]

@@ -141,7 +141,16 @@ refusals, and secret leakage. A check whose tool is missing is skipped.
   every new installer option. Do not reimplement installer logic in it.
 - Test interactive behaviour on a real pseudo-terminal with
   `tests/pty-run.py` when practical. Simulated `bash -i -c` is not enough
-  for the handoff.
+  for the handoff. `pty-run.py` types a line only when the line editor
+  waits (non-canonical terminal), streams the transcript, and ends with a
+  `pty-run: status` line. A failure message must say how the run ended
+  (exit, signal, timeout, or killed from outside); do not hide an external
+  kill, and do not change test commands to avoid a security agent.
+- Test files that must run go in the directory from `exec_tmpdir`
+  (`scripts/lib.sh`), never in a fixed `/tmp`: hardened hosts mount it
+  `noexec`. CI runs the Debian 11 job with a `noexec` `/tmp`.
+- `scripts/diagnose-test-env.sh` is the read-only evidence collector for
+  test failures on a host you cannot change. Keep it read-only.
 - tmux tests use `-L` with a unique name or a `TMUX_TMPDIR` inside the test
   directory. Never use the default socket, and never kill a server that
   the test did not start.

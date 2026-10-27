@@ -41,7 +41,11 @@ jobs:
 
   debian-11:
     runs-on: ubuntu-latest
-    container: debian:11
+    # /tmp noexec, as on hardened VDIs: the suites must find another
+    # directory for their stubs and scripts.
+    container:
+      image: debian:11
+      options: --tmpfs /tmp:rw,noexec,nosuid
     steps:
       # The image names its package snapshot in sources.list (commented).
       # The live bullseye-security archive no longer matches it.

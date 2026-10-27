@@ -121,6 +121,38 @@ finished process; the next `bash -i` (bash 5.1) then stopped the test
 script with SIGTTIN. Update the repository. To resume a stopped run, type
 `fg`.
 
+## `scripts/test-clean-install.sh` fails on a VDI but passes elsewhere
+
+Read the bracket after each FAIL. It says how the pseudo-terminal run ended:
+
+| Message | Meaning |
+| --- | --- |
+| `[exit=N elapsed=… lines=…]` | The command ended normally; the check itself failed. Look at the transcript lines under it. |
+| `[signal=N(…) …]` | The command (the shell under test) died from a signal. |
+| `[timeout=40s …]` | The harness stopped a run that hung. |
+| `[runner killed by signal 9 (KILL) from outside the harness …]` | Something outside the tests killed the runner: the kernel (memory limit) or another process, often an endpoint-security agent. Not a timeout. |
+
+A "sudo stub did not run … Permission denied" or a "script interpreters"
+failure means that the test directory does not allow executing files
+(`/tmp` mounted `noexec`). The suites now probe each candidate (`$TMPDIR`,
+`/tmp`, `/var/tmp`, `$XDG_RUNTIME_DIR`) and use the first that works. To
+choose one: `DOTFILES_TEST_TMPDIR=/path scripts/test-clean-install.sh`.
+
+To collect evidence, run the read-only diagnostic and keep its output:
+
+```sh
+scripts/diagnose-test-env.sh            # add --no-pty to skip the shell checks
+```
+
+It shows the mount options of each temporary directory, resource and
+cgroup limits with the `oom_kill` counter, security agents by process
+name, and the exit status, signal and time of a few shells on a
+pseudo-terminal. If only interactive `bash -i` or zsh runs are killed, and
+the `oom_kill` counter does not change, a security agent is the likely
+cause. Ask the team that runs it; do not try to work around it. The tests
+pass in Docker and in CI (`.github/workflows/test.yml`), and the real
+handoff does not use a Python pseudo-terminal.
+
 ## The installer stopped with "not interactive"
 
 Without a terminal (for example in a script), the installer needs `--yes`.

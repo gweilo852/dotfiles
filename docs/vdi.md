@@ -239,3 +239,7 @@ is. To check an update without touching your home directory:
 scripts/test.sh
 scripts/test-clean-install.sh
 ```
+
+If the clean-install test fails on the VDI only, run
+`scripts/diagnose-test-env.sh` and see
+[troubleshooting.md](troubleshooting.md#scriptstest-clean-installsh-fails-on-a-vdi-but-passes-elsewhere).

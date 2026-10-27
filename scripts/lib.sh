@@ -65,6 +65,30 @@ no_tty() {
   fi
 }
 
+# Print a directory for temporary test files where a file can be executed:
+# the first of $DOTFILES_TEST_TMPDIR, $TMPDIR, /tmp, /var/tmp and
+# $XDG_RUNTIME_DIR that passes a real execution probe. Hardened hosts often
+# mount /tmp noexec; stubs and test scripts then fail with "Permission
+# denied". $1 = maximum path length (0 = any), for tmux socket paths.
+# Returns 1 and prints nothing when no candidate works.
+exec_tmpdir() {
+  local max=${1:-0} d probe
+  for d in "${DOTFILES_TEST_TMPDIR:-}" "${TMPDIR:-}" /tmp /var/tmp "${XDG_RUNTIME_DIR:-}"; do
+    d=${d%/}
+    [ -n "$d" ] && [ -d "$d" ] && [ -w "$d" ] || continue
+    [ "$max" = 0 ] || [ "${#d}" -le "$max" ] || continue
+    probe=$(mktemp "$d/dotfiles-exec-probe.XXXXXX" 2>/dev/null) || continue
+    printf '#!/bin/sh\nexit 0\n' >"$probe" && chmod 700 "$probe"
+    if "$probe" 2>/dev/null; then
+      rm -f "$probe"
+      echo "$d"
+      return 0
+    fi
+    rm -f "$probe"
+  done
+  return 1
+}
+
 confirm() { # $1 = question. Returns 0 for yes.
   [ "$ASSUME_YES" = 1 ] && return 0
   [ -t 0 ] || return 1

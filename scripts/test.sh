@@ -25,7 +25,8 @@ WEZTERM=$(command -v wezterm 2>/dev/null || true)
 [ -z "$WEZTERM" ] && [ -x /Applications/WezTerm.app/Contents/MacOS/wezterm ] &&
   WEZTERM=/Applications/WezTerm.app/Contents/MacOS/wezterm
 
-TMP=$(mktemp -d)
+# Where files can be executed: hardened hosts mount /tmp noexec.
+TMP=$(mktemp -d "$(exec_tmpdir || echo "${TMPDIR:-/tmp}")/dotfiles-test.XXXXXX")
 trap 'tkill 2>/dev/null; rm -rf "$TMP"' EXIT
 
 BASH_FILES="install.sh uninstall.sh scripts/*.sh platforms/unraid/user-script.sh config/bash/bashrc config/shell/env.sh config/shell/aliases.sh config/shell/tmux.sh config/shell/zsh-handoff.sh config/tmux/clipboard.sh config/tmux/shell.sh tests/*.sh"
@@ -321,6 +322,51 @@ printf 'DOTFILES_INTERACTIVE_ZSH=1\n' >"$HZ/xdg/dotfiles/local.conf"
 hz sh "on $HZ/bin/zsh" '' XDG_CONFIG_HOME="$HZ/xdg"
 hz sh "no off*" 'DOTFILES_INTERACTIVE_ZSH=$(touch "$HOME/pwned")\ntouch "$HOME/pwned"\n'
 [ ! -e "$HZ/pwned" ] && pass "local.conf is read, never executed" || fail "local.conf content was executed"
+
+# exec_tmpdir: the first candidate where a file really runs.
+mkdir -p "$TMP/et/ok" "$TMP/et/ro"
+chmod 500 "$TMP/et/ro"
+got=$(DOTFILES_TEST_TMPDIR="$TMP/et/ok" exec_tmpdir)
+[ "$got" = "$TMP/et/ok" ] && pass "exec_tmpdir takes DOTFILES_TEST_TMPDIR first" || fail "exec_tmpdir override: $got"
+got=$(DOTFILES_TEST_TMPDIR="$TMP/et/ro" exec_tmpdir)
+[ -n "$got" ] && [ "$got" != "$TMP/et/ro" ] && pass "exec_tmpdir skips a directory it cannot use ($got)" || fail "exec_tmpdir took $got"
+got=$(DOTFILES_TEST_TMPDIR="$TMP/et/ok" TMPDIR=/nonexistent exec_tmpdir 4)
+case "$got" in "$TMP"/*) fail "exec_tmpdir ignored the length limit: $got" ;; *) pass "exec_tmpdir respects a path length limit" ;; esac
+[ -z "$(ls "$TMP/et/ok")" ] && pass "exec_tmpdir removes its probe file" || fail "exec_tmpdir left: $(ls "$TMP/et/ok")"
+chmod 700 "$TMP/et/ro"
+
+# tests/pty-run.py: status line, streamed transcript, line-editor sync.
+if has python3; then
+  PR="python3 -I $ROOT/tests/pty-run.py"
+  out=$($PR --timeout 10 -- sh -c 'exit 3' 2>&1); rc=$?
+  [ "$rc" = 3 ] && printf '%s' "$out" | grep -q 'pty-run: status exit=3 elapsed=' &&
+    pass "pty-run reports the exit status and elapsed time" || fail "pty-run exit: rc=$rc $out"
+  out=$($PR --timeout 10 -- sh -c 'kill -TERM $$' 2>&1); rc=$?
+  [ "$rc" = 143 ] && printf '%s' "$out" | grep -q 'status signal=15(SIGTERM)' &&
+    pass "pty-run reports a signal by number and name" || fail "pty-run signal: rc=$rc $out"
+  out=$($PR --timeout 1 -- sleep 30 2>&1); rc=$?
+  [ "$rc" = 124 ] && printf '%s' "$out" | grep -q 'status timeout=1s' &&
+    pass "pty-run reports its own timeout" || fail "pty-run timeout: rc=$rc $out"
+  # Killed from outside: the transcript so far survives, and no status line.
+  $PR --timeout 30 -- sh -c 'echo "EARLY-$((1+1))"; sleep 30' >"$TMP/pr.out" 2>&1 &
+  prpid=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q 'EARLY-2' "$TMP/pr.out" 2>/dev/null && break; sleep 0.2; done
+  kill -KILL "$prpid" 2>/dev/null
+  wait "$prpid" 2>/dev/null; rc=$?
+  grep -q 'EARLY-2' "$TMP/pr.out" && ! grep -q 'pty-run: status' "$TMP/pr.out" && [ "$rc" = 137 ] &&
+    pass "pty-run killed from outside: transcript kept, no status line (rc 137)" || fail "pty-run external kill: rc=$rc $(cat "$TMP/pr.out")"
+  # A slow start that discards typeahead (as a login banner, a startup
+  # question or tcflush does): the line must wait for the line editor.
+  if has perl; then
+    out=$($PR --timeout 20 --line 'echo "SYNC-$((2+2))"' --line exit -- env -i PATH="$PATH" TERM=xterm-256color \
+      perl -MPOSIX -e 'sleep 1; POSIX::tcflush(0, POSIX::TCIFLUSH()); exec "bash", "--norc", "--noprofile", "-i"' 2>&1 | tr -d '\r')
+    # Not anchored: bash 5.1 puts ESC[?2004l before the output on the same line.
+    printf '%s\n' "$out" | grep -q 'SYNC-4' && pass "pty-run types only when the line editor waits (typeahead flush survived)" ||
+      fail "pty-run line sync: $(printf '%s' "$out" | tail -n 3)"
+  fi
+else
+  skip "python3 missing: pty-run checks"
+fi
 
 # The original Debian 11 failure: zsh -i -c ending in an external command,
 # then bash -i, from a script run by an interactive shell on a terminal.
