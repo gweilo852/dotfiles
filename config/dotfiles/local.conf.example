@@ -10,3 +10,7 @@
 
 # The zsh to start. Default: the first zsh on PATH.
 # DOTFILES_ZSH=/usr/bin/zsh
+
+# The projects root for repo, tmux sessions and Git identities
+# (docs/repositories.md). Default: ~/projects.
+# DOTFILES_PROJECTS=~/projects

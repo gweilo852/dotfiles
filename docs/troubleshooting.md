@@ -153,6 +153,22 @@ cause. Ask the team that runs it; do not try to work around it. The tests
 pass in Docker and in CI (`.github/workflows/test.yml`), and the real
 handoff does not use a Python pseudo-terminal.
 
+## `fatal: unknown style 'zdiff3' given for 'merge.conflictstyle'`
+
+Git older than 2.35 (Debian 11 has 2.30.2) does not know zdiff3, and stops
+on every commit or merge. Update the repository and run `./install.sh`: the
+shared config now uses diff3, and the zdiff3 include is added only where git
+supports it (and removed after a downgrade). `scripts/doctor.sh` reports the
+problem.
+
+## "Author identity unknown" in a work or personal repository
+
+That scope has no identity file yet, so the guard from `--repos` leaves the
+identity empty, on purpose: Git does not fall back to the other identity.
+Create `~/.config/git/identity-work` (or `-personal`); see
+[repositories.md](repositories.md#git-identities). `scripts/doctor.sh`
+lists the missing files.
+
 ## The installer stopped with "not interactive"
 
 Without a terminal (for example in a script), the installer needs `--yes`.

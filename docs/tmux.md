@@ -163,6 +163,14 @@ Target syntax: `session`, `session:window` (name or index),
 `-t =CLOUD-1234`) for an exact match; without it tmux also accepts a prefix
 of the name.
 
+### Repository sessions
+
+`repo tmux` keeps one session per repository, named `scope/org/repo`, with
+a window per context (branch, ticket or agent). It never renames, closes or
+restarts a session, and a session that you named the same way by hand is
+left alone (the repository then gets `scope/org/repo-<hash>`). See
+[repositories.md](repositories.md#tmux-one-session-per-repository).
+
 ### Shell helpers
 
 `config/shell/tmux.sh` adds three helpers to zsh and bash. Each is defined

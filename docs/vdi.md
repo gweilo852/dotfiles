@@ -25,6 +25,7 @@ Debian 11 works. These are the differences that matter:
 | zsh-autosuggestions, zsh-syntax-highlighting | packaged | Found in `/usr/share`. |
 | `~/.profile` (from `/etc/skel`) | loads `~/.bashrc`, then adds `~/.local/bin` | An SSH login reaches the dotfiles block. In bash, `~/.local/bin` can appear twice in PATH; that is harmless, and zsh removes duplicates. |
 | Account | often Active Directory | `chsh` does not work. Use the interactive zsh handoff below. |
+| git | 2.30.2 | No `merge.conflictStyle = zdiff3` (every commit stopped with "unknown style 'zdiff3'"). The shared config uses diff3; zdiff3 is added only for git 2.35 or later. No `rev-parse --path-format` (2.31). |
 
 Prerequisites: `git`, and `curl` (or `wget`) with `tar` for
 `--release-binaries`. No root is needed.
@@ -225,6 +226,24 @@ If the shell is broken so badly that the uninstaller cannot run:
 
 Over SSH, you can also run a command without the startup files:
 `ssh vdi -t bash --noprofile --norc`.
+
+## Known issues on the VDI
+
+- **External SIGKILL of test subprocesses.** On the corporate Debian 11 VDI,
+  some automated subprocesses receive SIGKILL from outside the test harness,
+  most likely from the endpoint-security agent (inferred, not verified).
+  Pseudo-terminal checks in `scripts/test-clean-install.sh` that drive an
+  interactive `bash -i` were killed. The tests report such a kill as "killed
+  from outside the harness"; they are not changed to avoid the agent. The
+  interactive zsh handoff itself does not use a pseudo-terminal runner and
+  works.
+- **Isolated `tmux-workspace` check, exit status 137.** On the same VDI, the
+  isolated tmux helper check in `scripts/test-clean-install.sh` (the
+  `tmux-workspace` helper on its own test socket) ended with exit status 137
+  (128 + 9, SIGKILL). The check is kept as it is. In Docker (Debian 11,
+  tmux 3.1c), on macOS and in CI the same check passes. Collect evidence with
+  `scripts/diagnose-test-env.sh` and see
+  [troubleshooting.md](troubleshooting.md#scriptstest-clean-installsh-fails-on-a-vdi-but-passes-elsewhere).
 
 ## Updating
 

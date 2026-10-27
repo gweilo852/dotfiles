@@ -26,6 +26,8 @@ when the last command failed.
 - [Quick installation](#quick-installation)
 - [Manual installation](#manual-installation)
 - [Active Directory environments](#active-directory-environments)
+- [Repositories and Git identities](#repositories-and-git-identities)
+- [Instructions for coding agents](#instructions-for-coding-agents)
 - [Everyday use](#everyday-use)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [tmux](#tmux)
@@ -60,6 +62,12 @@ when the last command failed.
   of every change, and an uninstaller that undoes only those changes.
 - **Machine-specific settings stay local**: `~/.zshrc.local` holds work
   settings and secrets and is never part of the repository.
+- **Repositories**: one projects layout, a `repo` command to find and open
+  repositories, and one tmux session per repository (`--repos`).
+- **Git identities**: personal and work identities kept apart with
+  conditional includes; a scope without its own identity cannot commit.
+- **Agent instructions**: one `AGENTS.md`-based set of instructions for
+  Claude Code, Codex and Gemini CLI (`--ai`).
 
 ## Supported platforms
 
@@ -249,6 +257,35 @@ does not load `~/.bashrc`, or a later line that replaces `PROMPT_COMMAND`.
 needs `prefix r`, or a new server. Unraid never gets zsh.
 
 Details: [docs/active-directory.md](docs/active-directory.md).
+
+## Repositories and Git identities
+
+```sh
+./install.sh --repos     # ~/projects/{personal,work,scratch} and Git identities
+repo                     # choose a repository (fzf), or list them
+repo acme/api            # cd; an ambiguous name lists the candidates
+repo tmux acme/api STORY-1234   # session work/acme/api, window STORY-1234
+```
+
+Repositories live in `~/projects/personal/<org>/<repo>`,
+`~/projects/work/<org>/<repo>` and `~/projects/scratch/<repo>`; worktrees in
+`<scope>/<org>/.worktrees/<repo>/<context>`. The installer never moves,
+clones or deletes a repository. Each scope uses its own local identity file
+(`~/.config/git/identity-work`, `~/.config/git/identity-personal`); without
+it, Git refuses to commit in that scope instead of using the other identity.
+Details: [docs/repositories.md](docs/repositories.md).
+
+## Instructions for coding agents
+
+```sh
+./install.sh --ai        # adapters for the providers that are present
+$EDITOR ~/.config/ai/AGENTS.md && scripts/ai-sync.sh
+```
+
+`config/ai/AGENTS.md` holds generic, public instructions; your own and your
+scope (personal or work) instructions stay in `~/.config/ai/`. Claude Code
+and Gemini CLI import them; Codex gets a generated bundle. Existing files of
+yours are kept. Details: [docs/ai.md](docs/ai.md).
 
 ## Everyday use
 
@@ -538,23 +575,25 @@ dotfiles/
 │   ├── doctor.sh                  health check of an installed machine
 │   ├── test.sh                    automated validation
 │   ├── test-clean-install.sh      end-to-end install test in a temporary home
-│   └── diagnose-test-env.sh       read-only evidence for test failures on a hardened host
+│   ├── diagnose-test-env.sh       read-only evidence for test failures on a hardened host
+│   └── ai-sync.sh                 builds the generated agent instruction files
 ├── config/
 │   ├── wezterm/                   wezterm.lua and a local override example
 │   ├── starship/starship.toml     prompt and Kubernetes rules
 │   ├── zsh/                       zshrc, completion.zsh, plugins.zsh, local example
 │   ├── bash/bashrc                bash for Linux, WSL and Unraid
-│   ├── shell/                     env.sh, aliases.sh, tmux.sh, zsh-handoff.sh (zsh and bash)
+│   ├── shell/                     env.sh, aliases.sh, tmux.sh, repo.sh, local-conf.sh, zsh-handoff.sh
+│   ├── ai/                        shared AGENTS.md and the local template
 │   ├── tmux/                      tmux.conf, clipboard.sh, shell.sh, local example
 │   ├── dotfiles/                  local.conf example (machine-local settings)
-│   └── git/config                 delta and diff settings
+│   └── git/                       config (delta, diff3), zdiff3.config, identity-guard.config
 ├── platforms/
 │   ├── macos/Brewfile
 │   ├── linux/                     package names and release archive table
 │   └── unraid/user-script.sh      optional relink at boot
 ├── tests/                         Kubernetes prompt cases, pty-run.py (terminal tests)
 ├── .github/workflows/test.yml     CI: Ubuntu, macOS, Debian 11
-└── docs/                          installation, VDI, Active Directory, tmux, customization, tools, Kubernetes, troubleshooting
+└── docs/                          installation, VDI, Active Directory, repositories, AI, tmux, customization, tools, Kubernetes, troubleshooting
 ```
 
 Maintainers and coding agents: read [AGENTS.md](AGENTS.md) first.

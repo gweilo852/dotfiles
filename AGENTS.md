@@ -43,6 +43,21 @@ machine. Machine-specific content does not belong here.
   `install.sh` and the tests all use it.
 - `config/shell/tmux.sh` defines the tmux helpers (`tm`, `tmux-workspace`,
   `tmux-send`) only when the name is free, so user definitions win.
+- `config/shell/local-conf.sh` is the only reader of
+  `~/.config/dotfiles/local.conf` (read, never executed). Shell code,
+  tmux, the installer and doctor use it.
+- `config/shell/repo.sh` defines `repo` (bash and zsh) when the name is
+  free: discovery under `DOTFILES_PROJECTS`, ambiguity is an error (exit
+  2), one tmux session per repository named `scope/org/repo` with
+  `@dotfiles_repo`. It never creates, moves or deletes repositories or
+  worktrees (Story Status owns worktrees).
+- `--repos` adds Git identity includes: per scope, the managed
+  `config/git/identity-guard.config` and then the local
+  `~/.config/git/identity-<scope>`, plus `user.useConfigOnly`.
+- `--ai`: `config/ai/AGENTS.md` (public, generic) plus local files in
+  `~/.config/ai/`. Import blocks in `CLAUDE.md` and `GEMINI.md`; a link
+  from `~/.codex/AGENTS.md` to the bundle that `scripts/ai-sync.sh`
+  writes. Markdown blocks use `-md` markers (HTML comments).
 - `config/tmux/tmux.conf` is the single tmux config. It uses no plugins.
   Version-sensitive settings must work on tmux 2.6. `clipboard.sh` picks
   the local clipboard tool; OSC 52 (`set-clipboard on`) is the main path.
@@ -64,6 +79,11 @@ machine. Machine-specific content does not belong here.
 | `~/.gitconfig` | user | The repository owns only one `include.path` line. |
 | `~/.zshrc.local`, `~/.tmux.conf.local`, `wezterm_local.lua` | user | Never create content in them after the first install, never delete them. |
 | `~/.config/dotfiles/local.conf` | user | The repository owns only the `interactive-zsh` marked block, written only on `--interactive-zsh`. |
+| `~/projects` and everything in it | user | `--repos` may create the empty root, `personal`, `work` and `scratch`. Never move, clone or delete repositories. |
+| `~/.config/git/identity-*` | user | Never written by the installer. Never commit identities. |
+| `~/.config/ai/*` | user | `AGENTS.md` is created once from the example; never changed afterwards. |
+| `~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md` | user | The repository owns only the `ai-md` marked block. |
+| `~/.codex/AGENTS.md` | user | Linked to the generated bundle only when it does not exist. |
 | `~/.profile`, `~/.bash_profile`, `~/.bash_login` | user | The repository owns only the `bash_profile` block, added only when the file that bash reads does not load `~/.bashrc`. |
 | `~/.ssh`, kubeconfig, shell history, `~/.oh-my-zsh` | user | Never read their contents into the repository; never modify or delete them. |
 
@@ -156,6 +176,15 @@ refusals, and secret leakage. A check whose tool is missing is skipped.
   the test did not start.
 - awk must work with mawk 1.3.4 (Debian 11): no regex intervals such as
   `{64}`.
+- Git must work with 2.30.2 (Debian 11): no `merge.conflictStyle = zdiff3`
+  in shared files (it stops every commit), no `rev-parse --path-format`.
+  `scripts/test.sh` simulates git 2.30 for the installer; the Debian CI job
+  uses the real one.
+- zsh ties `path` to `PATH`: never name a variable `path` in code that zsh
+  sources.
+- Agent instructions in the repository stay generic and public. Employer
+  policies and private paths go in `~/.config/ai/`. Tests must not need an
+  installed AI provider, a real Git identity or a corporate service.
 - CI (`.github/workflows/test.yml`) runs both suites on Ubuntu, macOS and
   Debian 11. Keep it unprivileged and free of secrets.
 - Report test results with their real output. Say which checks were skipped.

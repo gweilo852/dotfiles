@@ -181,4 +181,7 @@ Then delete the directory if you want. A reboot also removes every link.
 - Change the login shell, run `chsh`, or edit `/etc/passwd`. The opt-in
   `--interactive-zsh` starts zsh from bash instead.
 - Start, stop, reload or send keys to a tmux server.
+- Move, clone or delete a repository (`--repos` only creates empty
+  directories), or write your Git identity files.
+- Install an AI provider, or replace an instruction file of yours.
 - Write to `/boot` on Unraid.
