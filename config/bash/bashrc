@@ -42,6 +42,8 @@ fi
 
 . "$DOTFILES_DIR/config/shell/aliases.sh"
 . "$DOTFILES_DIR/config/shell/tmux.sh"
+. "$DOTFILES_DIR/config/shell/local-conf.sh"
+. "$DOTFILES_DIR/config/shell/repo.sh"
 alias reload='exec bash'
 
 if command -v kubectl >/dev/null 2>&1 && [ "${BASH_VERSINFO[0]}" -ge 4 ]; then

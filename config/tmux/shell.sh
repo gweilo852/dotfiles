@@ -8,6 +8,8 @@
 # their shell. A setting in ~/.tmux.conf.local loads later and wins.
 #   sh shell.sh --print   show the choice and change nothing
 here=$(dirname "$0")
+# shellcheck source=config/shell/local-conf.sh
+. "$here/../shell/local-conf.sh"
 # shellcheck source=config/shell/zsh-handoff.sh
 . "$here/../shell/zsh-handoff.sh"
 

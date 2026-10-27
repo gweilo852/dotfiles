@@ -157,6 +157,8 @@ login=$( (getent passwd "$(id -un)" 2>/dev/null ||
   DF_USER=$(id -un) awk -F: '$1 == ENVIRON["DF_USER"]' /etc/passwd 2>/dev/null) | cut -d: -f7 | head -n 1)
 ok "login shell: ${login:-${SHELL:-unknown}}${login:+ (account)}, \$SHELL=${SHELL:-unset}"
 ok "running from: $(ps -o comm= -p "$PPID" 2>/dev/null | sed 's/^-//')"
+# shellcheck source=config/shell/local-conf.sh
+. "$C/shell/local-conf.sh"
 # shellcheck source=config/shell/zsh-handoff.sh
 . "$C/shell/zsh-handoff.sh"
 if _dotfiles_zsh_handoff_target; then

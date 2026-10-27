@@ -29,7 +29,7 @@ WEZTERM=$(command -v wezterm 2>/dev/null || true)
 TMP=$(mktemp -d "$(exec_tmpdir || echo "${TMPDIR:-/tmp}")/dotfiles-test.XXXXXX")
 trap 'tkill 2>/dev/null; rm -rf "$TMP"' EXIT
 
-BASH_FILES="install.sh uninstall.sh scripts/*.sh platforms/unraid/user-script.sh config/bash/bashrc config/shell/env.sh config/shell/aliases.sh config/shell/tmux.sh config/shell/zsh-handoff.sh config/tmux/clipboard.sh config/tmux/shell.sh tests/*.sh"
+BASH_FILES="install.sh uninstall.sh scripts/*.sh platforms/unraid/user-script.sh config/bash/bashrc config/shell/env.sh config/shell/aliases.sh config/shell/tmux.sh config/shell/zsh-handoff.sh config/shell/local-conf.sh config/shell/repo.sh config/tmux/clipboard.sh config/tmux/shell.sh tests/*.sh"
 ZSH_FILES="config/zsh/zshrc config/zsh/completion.zsh config/zsh/plugins.zsh config/zsh/zshrc.local.example"
 
 # --------------------------------------------------------------------
@@ -45,7 +45,7 @@ else
   skip "zsh not installed"
 fi
 # POSIX files also run under sh (dash on Debian).
-for f in config/shell/zsh-handoff.sh config/tmux/shell.sh config/tmux/clipboard.sh; do
+for f in config/shell/zsh-handoff.sh config/shell/local-conf.sh config/tmux/shell.sh config/tmux/clipboard.sh; do
   sh -n "$f" 2>"$TMP/err" && pass "sh -n $f" || fail "sh -n $f: $(cat "$TMP/err")"
 done
 if has python3; then
@@ -265,6 +265,65 @@ if has tmux; then
 fi
 
 # --------------------------------------------------------------------
+section "repository navigation (repo)"
+if has git; then
+  P="$TMP/projects"
+  gq() { git -c user.name=Test -c user.email=test@example.net -c init.defaultBranch=main "$@"; }
+  for r in work/acme/api work/acme/web personal/me/api personal/me/dots personal/me/site.io scratch/play; do
+    mkdir -p "$P/$r" && (cd "$P/$r" && gq init -q && gq commit -q --allow-empty -m init)
+  done
+  mkdir -p "$P/work/acme/notes" "$P/work/acme/.worktrees/api"
+  (cd "$P/work/acme/api" && gq worktree add -q "$P/work/acme/.worktrees/api/STORY-1" -b story-1)
+  P=$(cd "$P" && pwd -P)
+  cat >"$TMP/repo-test.sh" <<'EOF'
+. "$ROOT/config/shell/tmux.sh"; . "$ROOT/config/shell/local-conf.sh"; . "$ROOT/config/shell/repo.sh"
+t() { command tmux -L "$DOTFILES_TMUX_SOCKET" "$@"; }
+echo "list=$(repo list | awk '{print $1}' | paste -sd, -)"
+echo "worktrees=$(repo list --worktrees | awk '{print $1}' | grep -c @)"
+repo web >/dev/null && echo "web=${PWD#$P/}"
+repo api >/dev/null 2>"$TMP/amb"; echo "api=$? $(grep -c '^  ' "$TMP/amb")"
+repo acme/api && echo "acme/api=${PWD#$P/}"
+repo nope 2>/dev/null; echo "nope=$?"
+echo "wt=$(repo worktrees acme/api | grep -c STORY-1)"
+cd "$P/work/acme/.worktrees/api/STORY-1" && echo "root=$(repo root | sed "s|^$P/||")"
+cd "$P"
+t new-session -d -s work/acme/web -n mine 'sleep 60'
+repo tmux -d acme/api | grep -c created | sed 's/^/created1=/'
+repo tmux -d acme/api | grep -c created | sed 's/^/created2=/'
+echo "opt=$(t show-options -qv -t '=work/acme/api:' @dotfiles_repo | sed "s|^$P/||")"
+repo tmux -d acme/api STORY-1 >/dev/null
+echo "ctxdir=$(t display-message -p -t '=work/acme/api:STORY-1' '#{pane_current_path}' | sed "s|^.*/projects/||")"
+repo tmux -d acme/web >/dev/null
+echo "handmade=$(t list-windows -t '=work/acme/web' -F '#W' | paste -sd, -) hashed=$(t ls -F '#S' | grep -c '^work/acme/web-[0-9a-f]\{6\}$')"
+repo tmux -d site.io >/dev/null && echo "dotname=$(t ls -F '#S' | grep -c '^personal/me/site_io$')"
+cd "$P/work/acme/.worktrees/api/STORY-1" && repo tmux -d >/dev/null
+echo "fromwt=$(t ls -F '#S' | grep -c '^work/acme/api$') $(t list-windows -t '=work/acme/api' -F '#W' | grep -c '^STORY-1$')"
+t kill-server
+EOF
+  for sh_ in bash zsh; do
+    has "$sh_" && has tmux || continue
+    out=$(env -i HOME="$TMP" PATH="$PATH" ROOT="$ROOT" TMP="$TMP" P="$P" DOTFILES_PROJECTS="$P" \
+      DOTFILES_TMUX_SOCKET="dotfiles-test-$$-repo$sh_" "$sh_" "$TMP/repo-test.sh" 2>&1 | paste -sd' ' -)
+    want="list=personal/me/api,personal/me/dots,personal/me/site.io,scratch/play,work/acme/api,work/acme/web worktrees=1 web=work/acme/web api=2 2 acme/api=work/acme/api nope=1 wt=1 root=work/acme/.worktrees/api/STORY-1 created1=1 created2=0 opt=work/acme/api ctxdir=work/acme/.worktrees/api/STORY-1 handmade=mine hashed=1 dotname=1 fromwt=1 1"
+    [ "$out" = "$want" ] && pass "$sh_: repo lists, resolves, refuses ambiguity, keeps a hand-made session, reuses its own" ||
+      fail "$sh_ repo: $out"
+  done
+  # The root from local.conf (read, not executed), with ~, quotes and a comment.
+  mkdir -p "$TMP/lc/.config/dotfiles" "$TMP/lc/code"
+  printf 'export DOTFILES_PROJECTS="~/code"  # mine\n' >"$TMP/lc/.config/dotfiles/local.conf"
+  for sh_ in bash zsh; do
+    has "$sh_" || continue
+    out=$(env -i HOME="$TMP/lc" PATH="$PATH" "$sh_" -c '. "$1/config/shell/local-conf.sh"; . "$1/config/shell/repo.sh"; _dr_root' sh "$ROOT")
+    [ "$out" = "$(cd "$TMP/lc/code" && pwd -P)" ] && pass "$sh_: DOTFILES_PROJECTS from local.conf (~, quotes, comment)" || fail "$sh_ local.conf root: $out"
+  done
+  # A user's own repo function or alias wins.
+  out=$(env -i HOME="$TMP" PATH="$PATH" bash -c 'repo() { echo mine; }; . "$1/config/shell/local-conf.sh"; . "$1/config/shell/repo.sh"; repo' sh "$ROOT")
+  [ "$out" = mine ] && pass "a user-defined repo function is kept" || fail "repo overrode a user function: $out"
+  out=$(env -i HOME="$TMP" PATH="$PATH" DOTFILES_PROJECTS="$TMP/none" bash -c '. "$1/config/shell/local-conf.sh"; . "$1/config/shell/repo.sh"; repo list; echo "rc=$?"' sh "$ROOT")
+  [ "$out" = rc=0 ] && pass "repo list with no projects directory prints nothing" || fail "repo list without root: $out"
+fi
+
+# --------------------------------------------------------------------
 section "platform detection"
 detect() { (env "$@" bash -c '. scripts/lib.sh; detect_platform'); }
 mkdir -p "$TMP/sys-wsl/proc" "$TMP/sys-linux/proc" "$TMP/sys-unraid/etc"
@@ -298,8 +357,8 @@ hz() { # shell, expected pattern, local.conf content, env...
   shift 3
   printf '%b' "$conf" >"$HZ/.config/dotfiles/local.conf"
   got=$(env -i HOME="$HZ" PATH="$HZ/bin:/usr/bin:/bin" "$@" "$sh_" -c \
-    '. "$1"; if _dotfiles_zsh_handoff_target; then echo "on $_dotfiles_zsh"; else echo "no $_dotfiles_zsh_why"; fi' \
-    sh "$ROOT/config/shell/zsh-handoff.sh" 2>&1)
+    '. "$1"; . "$2"; if _dotfiles_zsh_handoff_target; then echo "on $_dotfiles_zsh"; else echo "no $_dotfiles_zsh_why"; fi' \
+    sh "$ROOT/config/shell/local-conf.sh" "$ROOT/config/shell/zsh-handoff.sh" 2>&1)
   # shellcheck disable=SC2254
   case "$got" in $want) pass "${sh_##*/}: ${conf:-(no setting)} $* -> ${got%% (*}" ;; *) fail "${sh_##*/}: '$conf' $*: want $want, got $got" ;; esac
 }

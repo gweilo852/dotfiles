@@ -62,6 +62,8 @@ WORDCHARS=${WORDCHARS//[\/]}  # Alt+Backspace stops at a slash
 source $DOTFILES_DIR/config/zsh/completion.zsh
 source $DOTFILES_DIR/config/shell/aliases.sh
 source $DOTFILES_DIR/config/shell/tmux.sh
+source $DOTFILES_DIR/config/shell/local-conf.sh
+source $DOTFILES_DIR/config/shell/repo.sh
 alias reload='exec zsh'
 
 # Machine-specific settings. Loaded after compinit, so compdef works here,

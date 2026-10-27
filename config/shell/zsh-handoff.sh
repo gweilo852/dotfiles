@@ -1,5 +1,6 @@
-# shellcheck shell=sh disable=SC3043
+# shellcheck shell=sh disable=SC3043,SC2154
 # SC3043: `local` is not POSIX, but dash, bash, busybox ash and zsh have it.
+# SC2154: _dotfiles_conf is set by _dotfiles_conf_get (local-conf.sh).
 # Interactive zsh handoff: one decision, shared by config/bash/bashrc
 # (sourced), config/tmux/shell.sh (run by tmux), doctor.sh and the tests.
 # POSIX sh; works in bash 3.2, dash and busybox ash. Nothing runs here.
@@ -9,29 +10,17 @@
 #     DOTFILES_INTERACTIVE_ZSH=1     interactive bash and new tmux windows
 #                                    start zsh (opt-in; default off)
 #     DOTFILES_ZSH=/opt/bin/zsh      zsh to use (default: zsh on PATH)
-# The file is read, not executed. Only NAME=value lines count, and the last
-# one wins. An environment variable of the same name wins over the file.
+# Read with _dotfiles_conf_get (config/shell/local-conf.sh, which the
+# caller sources first): the environment wins over the file.
 # DOTFILES_NO_ZSH=1 in the environment turns the handoff off for one shell.
 
 # Returns 0 and sets _dotfiles_zsh to an absolute zsh path when the handoff
 # applies to this machine. Otherwise returns 1 and sets _dotfiles_zsh_why.
 _dotfiles_zsh_handoff_target() {
-  local conf line on zsh dir IFS
+  local on="" zsh="" dir IFS
   _dotfiles_zsh='' _dotfiles_zsh_why=''
-  on=${DOTFILES_INTERACTIVE_ZSH-} zsh=${DOTFILES_ZSH-}
-  conf="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/local.conf"
-  if [ -r "$conf" ]; then
-    while IFS= read -r line || [ -n "$line" ]; do
-      line=${line#export }
-      case $line in
-        DOTFILES_INTERACTIVE_ZSH=*) [ -n "${DOTFILES_INTERACTIVE_ZSH+x}" ] || on=${line#*=} ;;
-        DOTFILES_ZSH=*) [ -n "${DOTFILES_ZSH+x}" ] || zsh=${line#*=} ;;
-      esac
-    done <"$conf"
-  fi
-  # Drop a trailing comment and one level of quotes.
-  on=${on%%[[:space:]]*} on=${on#[\"\']} on=${on%[\"\']}
-  zsh=${zsh%%[[:space:]]#*} zsh=${zsh#[\"\']} zsh=${zsh%[\"\']}
+  if _dotfiles_conf_get DOTFILES_INTERACTIVE_ZSH; then on=$_dotfiles_conf; fi
+  if _dotfiles_conf_get DOTFILES_ZSH; then zsh=$_dotfiles_conf; fi
 
   case $on in
     1 | [Yy] | [Yy][Ee][Ss] | [Tt][Rr][Uu][Ee] | [Oo][Nn]) ;;

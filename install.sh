@@ -261,6 +261,8 @@ else
   [ -d "$BACKUP_DIR" ] && echo "  backups:  $BACKUP_DIR"
   echo "  manifest: $MANIFEST"
   echo "  local settings (never managed): ~/.zshrc.local, ~/.config/wezterm/wezterm_local.lua"
+  # shellcheck source=config/shell/local-conf.sh
+  . "$C/shell/local-conf.sh"
   # shellcheck source=config/shell/zsh-handoff.sh
   . "$C/shell/zsh-handoff.sh"
   if _dotfiles_zsh_handoff_target; then
