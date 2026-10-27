@@ -124,12 +124,21 @@ def main():
             os.killpg(pid, signal.SIGKILL)
         except OSError:
             pass
-        try:
-            os.waitpid(pid, 0)
-        except ChildProcessError:
-            pass
+        # Bounded: never block on a child that the kill did not end.
+        reaped = "reaped"
+        end = time.time() + 5
+        while True:
+            try:
+                if os.waitpid(pid, os.WNOHANG)[0]:
+                    break
+            except ChildProcessError:
+                break
+            if time.time() >= end:
+                reaped = "not-reaped-after-5s"
+                break
+            time.sleep(0.05)
         sys.stderr.write("\npty-run: timeout after %.0fs\n" % args.timeout)
-        sys.stderr.write("pty-run: status timeout=%.0fs %s %s\n" % (args.timeout, elapsed, sent))
+        sys.stderr.write("pty-run: status timeout=%.0fs %s %s child=%s\n" % (args.timeout, elapsed, sent, reaped))
         return 124
     if os.WIFEXITED(status):
         rc = os.WEXITSTATUS(status)
